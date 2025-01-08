@@ -30,11 +30,18 @@ start = clock.time()
 ##### FUNCTIONS
 def my2dfilter(s,sigmax,sigmay, ns=2):
     """
+    Spatial 2D filter, using gaussian kernel.
+    This is used to get large scale trend of SSH
+
     INPUT:
-        -
+        - s : signal to smooth
+        - sigmax : for gaussian kernel, std in x direction
+        - sigmay : for gaussian kernel, std in y direction
+        - ns : width of the gaussian filter, in number of std
     OUTPUT:
-        - 
+        - smoothed signal
     """
+    
     if type(s)=='xarray.core.dataarray.DataArray':
         s = s.data
     x, y = np.meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
@@ -67,7 +74,6 @@ def unstek(time, fc, TAx, TAy, k, return_traj=False):
         - return_traj : if True, return current as complex number
     OUTPUT:
         - array of surface current
-
     """
     K = np.exp(k)
 
@@ -98,7 +104,8 @@ def unstek(time, fc, TAx, TAy, k, return_traj=False):
 
 def unstek_tgl(time, fc, TAx, TAy, k, dk):
     """
-
+    Computes the Tangent Linear model for 'unstek'.
+    This is a linear approximation of the 'unstek' model derived with control theory.
 
     INPUT:
         - time  : array of time
@@ -108,7 +115,7 @@ def unstek_tgl(time, fc, TAx, TAy, k, dk):
         - k     : list of boundaries of layer(s)
         - dk    : 
     OUTPUT:
-        - 
+        - First layer values of the TGL for zonal/meridional current, along the time dimension
     """
     K = np.exp(k)
     dK = np.exp(k)*dk
@@ -143,17 +150,19 @@ def unstek_tgl(time, fc, TAx, TAy, k, dk):
 
     return np.real(dU[0]), np.imag(dU[0])
 
-def unstek_adj(time, fc, TAx, TAy, k, ad_Y):
+def unstek_adj(time, fc, TAx, TAy, k, d):
     """
+    Computes the adjoint of the vector K for 'unstek'
+
     INPUT:
         - time  : array of time
         - fc    : scalar Coriolis f
         - TAx   : array wind stress U
         - TAy   : array wind stress V
-        - k     : list of boundaries of layer(s)
-        - ad_Y  : 
+        - k     : list of k values for each boundaries of the layer(s)
+        - d  : innovation vector, observation forcing for [zonal,meridional] currents
     OUTPUT:
-        - 
+        - returns: - adjoint of vectors K
     """
 
     K = np.exp(k)
@@ -164,7 +173,7 @@ def unstek_adj(time, fc, TAx, TAy, k, ad_Y):
     ad_U = [None]*nl
     for ik in range(nl):
         ad_U[ik]=np.zeros((len(time)), dtype='complex')
-    ad_U[0] = ad_Y[0] + 1j*ad_Y[1]
+    ad_U[0] = d[0] + 1j*d[1]
 
     TA = TAx + 1j*TAy
 
@@ -205,11 +214,9 @@ def unstek_adj(time, fc, TAx, TAy, k, ad_Y):
 
     return np.real(ad_k)
 
-  #######################################################
-
 def cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
     """
-    Computes the cost function of reconstructed current vs observations
+    Computes the cost function of reconstructed current vs observations for 'unstek'
 
     INPUT:
         - pk    :
@@ -231,87 +238,35 @@ def cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
 
 def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):  
     """
-
+    Computes the gradient of the cost function for 'unstek'
 
     INPUT:
-        - pk    :
+        - pk    : vector with K first guess values (len = nb layers)
         - time  : array of time
         - fc    : scalar Coriolis f
         - TAx   : array wind stress U
         - TAy   : array wind stress V
         - Uo    : U current observation
         - Vo    : V current observation
-        - Ri    :
+        - Ri    : error statistics (for now is 1)
     OUTPUT:
-        - 
+        - gradient of the cost function
     """
     U, V = unstek(time, fc, TAx, TAy, pk)
 
-    sensU = (Uo - U)*Ri
-    sensV = (Vo - V)*Ri
-    sensU[np.isnan(sensU)]=0.
-    sensV[np.isnan(sensV)]=0.
+    # distance to observations
+    # this is used in the adjoint to add a forcing where obs is available
+    d_U = (Uo - U)*Ri
+    d_V = (Vo - V)*Ri
+    #   = 0 where no observation available
+    d_U[np.isnan(sensU)]=0.
+    d_V[np.isnan(sensV)]=0.
 
+    # computing the gradient of cost function with TGL
     dJ_pk = unstek_adj(time, fc, TAx, TAy, pk, [sensU,sensV])
 
-    return -dJ_pk
+    return - dJ_pk
 
-@contextlib.contextmanager
-def forcefully_redirect_stdout():
-    """Redirect stdout at the system level.
-
-    Used to capture data from scipy.optimize.minimize
-
-    Yields
-    ------
-        `dict`: dict with a txt key after the context exits
-
-    from @brandondube
-    """
-    if type(sys.stdout) is io.TextIOWrapper:  # console / command line
-        target = sys.stdout
-    else:  # jupyter
-        target = sys.__stdout__
-
-    fd = target.fileno()
-    restore_fd = os.dup(fd)
-    try:
-        target.flush()
-        tmp, out = tempfile.SpooledTemporaryFile(mode='w+b'), {}
-        os.dup2(tmp.fileno(), fd)
-        yield out
-        os.dup2(restore_fd, fd)
-    finally:
-        tmp.flush()
-        tmp.seek(0)
-        out['txt'] = tmp.read().decode('utf-8')
-        tmp.close()
-
-def parse_cost_by_iter_lbfgsb(string):
-    """Parse the cost function history from L-BFGS-B optimizer print statements.
-
-    Parameters
-    ----------
-    string : `str`
-        A string containing the entire L-BFGS-B output
-
-    Returns
-    -------
-    `list`
-        a list of cost function values by iteration
-
-    from @brandondube
-    """
-    # use regex to find lines that include "at iteration" information.
-    lines_with_cost_function_values = \
-        re.findall(r'At iterate\s*\d*?\s*f=\s*-*?\d*.\d*D[+-]\d*', string)
-
-    # grab the value from each line and convert to python floats
-    fortran_values = [s.split()[-1] for s in lines_with_cost_function_values]
-    # fortran uses "D" to denote double and "raw" exp notation,
-    # fortran value 3.0000000D+02 is equivalent to
-    # python value  3.0000000E+02 with double precision
-    return [float(s.replace('D', 'E')) for s in fortran_values]
 ###############
 # bottom lat, top lat, left lon, right lon, 
 box= [-25, -24, 45., 46, 24000., 24010.]
@@ -376,14 +331,7 @@ if XARRAY: # xarray version
     gH = xr.where(gH>1e5,np.nan,gH)
 
     # note: a voir pour que la suite fonctionne !
-    
-    # print(dsUV.time.data)
-    # raise Exception
 
-    # shape of gridded U current
-    # nt,ny,nx = np.shape(gU)
-    # # time array
-    # gtime = dsUV.time.values
 
 else:
     for it in range(len(files)):
@@ -535,13 +483,9 @@ Vo[::86400//dt] = V[::86400//dt]
 # -> Si fonction cout = defaut, pas d'influence.
 Ri=Uo*0.+1 
 
-
-
-
-eps=1e-8
-
 # inverse problem
 # verification of tangeant linear func with adjoint.
+eps=1e-8
 if False:
     Ua, Va = unstek(time, fc, TAx,TAy, pk)
     Ua1,Va1 = unstek(time, fc, TAx,TAy, pk+eps*pk)
@@ -556,7 +500,7 @@ if False:
 
     MX = unstek_tgl(time, fc, TAx, TAy, pk, X)
     Y = [Ua,Va]
-    MtY = unstek_adj(time, fc, TAx, TAy, pk, Y)
+    MtY =   (time, fc, TAx, TAy, pk, Y)
 
     print(np.sum(MX[0]*Y[0]+MX[1]*Y[1]))
     print(np.sum(X*MtY))
@@ -579,10 +523,6 @@ if False:
                     jac=grad_cost,
                     options={'disp': True, 'maxiter': maxiter})
     
-    
-    # result.x_iter = parameter_vectors
-    # result.fun_iter = cost_by_iter
-
 
     print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
     print(' cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
@@ -608,20 +548,22 @@ if False:
 
 # looking at the cost function
 #   for a slab model (1 layer)
-if True:
+if False:
     print('* Looking at cost function for k0,k1 in 1 layer model')
-
+   
     maxiter = 15
     cost_iter = np.zeros(maxiter)
     vector_k = np.array([-3,-12])
     vector_k_iter = np.zeros((len(vector_k),maxiter))
+    vector_k_iter[:,0] = vector_k
     for k in range(maxiter):
-        res = opt.minimize(cost, vector_k_iter[k], args=(time, fc, TAx, TAy, Uo, Vo, Ri),
+        res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                     method='L-BFGS-B',
                     jac=grad_cost,
                     options={'disp': True, 'maxiter': k})
-        vector_k_iter[k] = res['x']
-        cost_iter[k] = cost(vector_k_iter[k], time, fc, TAx, TAy, Uo, Vo, Ri)
+    
+        vector_k_iter[:,k] = res['x']
+        cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
 
     # LAYER DEFINITION
     # -> number of values = number of layers
@@ -638,13 +580,13 @@ if True:
     fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
     s = ax.pcolormesh(tested_values,tested_values,J,cmap='plasma_r',norm=matplotlib.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
     plt.colorbar(s,ax=ax)
-    plt.scatter(vector_k_iter[0],vector_k_iter[1],cost_by_iter)
+    plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
     ax.set_xlabel('log(k0)')
     ax.set_ylabel('log(k1)')
     plt.savefig('k0k1_J_1layer.png')
 
 # plot de J(k1,k2), à k0 et k3 fixés à leur valeur convergée
-if False:
+if True:
     print('* Looking at cost function for k1,k2 in 2 layer model')
     # k0 a un effet linéaire (facteur de tau)
     # k3 est juste en fonction du fond
@@ -670,6 +612,7 @@ if False:
     fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
     s = ax.pcolormesh(tested_values,tested_values,J,cmap='plasma_r',norm=matplotlib.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
     plt.colorbar(s,ax=ax)
+    ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
     ax.set_xlabel('log(k1)')
     ax.set_ylabel('log(k2)')
     plt.savefig('k1k2_J_2layer.png')
