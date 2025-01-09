@@ -113,7 +113,7 @@ def build_LS_files(files, box, path_save):
     nt, _, _ = np.shape(ds[list_var[0]])
     
     # checking if file is present
-    name_save = path_save
+    name_save = path_save + 'LS_fields'
     for var in list_var:
         name_save += '_'+var
     name_save += '_' + str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '_' + str(box[4]) + '_' + str(box[5]) + '.nc'
@@ -203,7 +203,7 @@ def build_LS_files(files, box, path_save):
     ds_LS.to_netcdf(path=name_save,mode='w')
     ds_LS.close()
     
-def interp_at_model_t_1D(dsUg, dt, ir, jr, files, box, path_save):
+def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='linear'):
     """
     Builds a netcdf file with variable interpolated at the timestep dt.
         initial file is global, we create a subset defined by 'box'
@@ -211,29 +211,20 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, files, box, path_save):
     INPUT:
         - dsUg: dataset with geostrophic currents, on the same grid as in 'files'
         - dt : time step to interpolate at
-        - files: list of path for 1 variable
+        - list_files: list of path for 1 variable [filesUV,filesH,filesW,filesD]
         - box: list of lat lon boundaries [left,right,bottom,top]
         - path_save: where to save the netcdf file
+        - method : interpolation method
     OUPUT:
         - a netcdf file with time interpolated at ['ir','jr'], for 
           currents, SSH, MLD
     """   
     
-    ds = xr.open_mfdataset(files)
+    # opening datasets
+    ds = xr.open_mfdataset(list_files)
     gUg = dsUg.Ug
     gVg = dsUg.Vg
-    list_var = list(ds.keys())    
-    # checking if file is present
-    name_save = path_save
-    for var in list_var:
-        name_save += '_'+var
-    name_box = str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '_' + str(box[4]) + '_' + str(box[5])
-    nameLocation = 'ir'+str(ir)+'jr'+str(jr)+'dt'+str(dt)
-    name_save += '_' + name_box + '_'+nameLocation+'.nc'
-    if pathlib.Path(name_save).is_file():
-        print(' Interpolated file for '+str(list_var)+' is already here')
-        return None
-    
+  
     # searching for lon,lat indexes
     glon = ds.lon
     glat = ds.lat
@@ -241,17 +232,52 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, files, box, path_save):
     iy = np.where((glat>=box[2])&(glat<=box[3]))[0]
     glon = glon[ix[0]:ix[-1]+1]
     glat = glat[iy[0]:iy[-1]+1]
+    
     # selecting data in lat lon
     ds = ds.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
     ds = ds.isel(lon=ir,lat=jr)
+    print('     location is:',ds.lon.values,ds.lat.values)
+    LON = ds.lon.values
+    LAT = ds.lat.values
     
+    # checking if file is present
+    name_save = path_save
+    name_save += 'Interp_1D_LON'+str(LON)+'_LAT'+str(LAT)+'.nc'
+    if pathlib.Path(name_save).is_file():
+        print(' Interpolated file 1D is already here')
+        return None
+    
+
     # new time vector
     time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
-    for var in list_var:
-        gvar = ds[var]
-        if var=='SSU':
-            U = (gvar - gUg).interp({'time':time}).values
-        elif var=='SSV':
-            V = (gvar - gVg).interp({'time':time}).values
-        else:
-            VAR_i = gvar.interp({'time':time}).values
+    ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
+    
+    # stress as: C x wind**2
+    gTx = ds_i.geo5_u10m
+    gTy = ds_i.geo5_v10m
+    gTAx = 8e-6*np.sign(gTx)*gTx**2
+    gTAy = 8e-6*np.sign(gTy)*gTy**2
+    
+    # adding the stress to the variables
+    ds_i['TAx'] = (ds_i.geo5_u10m.dims,
+                        gTAx.data,
+                        {'standard_name':'eastward_wind_stress',
+                            'long_name':'Eastward wind stress at 10m above water',
+                            'units':'m2 s-2',})
+    ds_i['TAy'] = (ds_i.geo5_v10m.dims,
+                        gTAy.data,
+                        {'standard_name':'eastward_wind_stress',
+                            'long_name':'Eastward wind stress at 10m above water',
+                            'units':'m2 s-2',})
+
+
+    # saving
+    ds_i.attrs['interp_method'] = method
+    ds_i.attrs['produced_by'] = 'interp_at_model_t_1D'
+    ds_i.attrs['model_dt'] = dt
+    ds_i.attrs['location (LON,LAT)'] = (LON,LAT)
+    
+    ds_i.to_netcdf(path=name_save,mode='w')
+    ds.close()
+    ds_i.close()
+    

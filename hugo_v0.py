@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pylab as plt
-import matplotlib
+import matplotlib as mpl
 import pdb 
 import glob
 from netCDF4 import Dataset
@@ -224,7 +224,15 @@ def cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
     """
     U, V = unstek(time, fc, TAx, TAy, pk)
 
+    
+        
+    
     J = 0.5 * np.nansum( ((Uo - U)*Ri)**2 + ((Vo - V)*Ri)**2 )
+
+    if np.sum( np.isnan(U) ) + np.sum(np.isnan(V))>0:
+        # some nan have been detected, the model has crashed with 'pk'
+        # so J is nan.
+        J = np.nan
 
     return J
 
@@ -273,7 +281,8 @@ dt=60 # timestep
 #   -> number of values = number of layers
 #   -> values = turbulent diffusion coefficient
 #pk=np.array([-3,-12])  # 1 layers
-pk=np.array([-3,-8,-10,-12]) # 2 layers
+pk=np.array([-3,-2])  # 1 layers
+#pk=np.array([-3,-8,-10,-12]) # 2 layers
 #pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
 
 # spatial location. We work in 1D
@@ -518,17 +527,17 @@ if False:
                     jac=grad_cost,
                     options={'disp': True, 'maxiter': maxiter})
     
-
-    print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
-    print(' cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
+    if np.isnan(cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri)):
+        print('The model has crashed.')
+    else:
+        print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+        print(' cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
     # vector K solution: [-3.63133021 -9.46349552]
     # cost function value with K solution: 0.36493136309782287
 
 
     # using the value of K from minimization, we get currents
     Ua, Va = unstek(time, fc, TAx,TAy, res['x'])
-
-
 
     plt.figure(figsize=(10,3),dpi=dpi)
     plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
@@ -594,20 +603,19 @@ if False:
 if True:
     print('* Looking at cost function for k0,k1 in 1 layer model')
     
-    PLOT_ITERATIONS = False
-    tested_values = np.arange(-15,0,1) # 0.25
+    PLOT_ITERATIONS = True
+    tested_values = np.arange(-15,0,0.25)  # -15,0,0.25
     maxiter = 15
-    vector_k = np.array([-12,-6]) # initial vector k
+    vector_k = np.array([-6,-12]) # initial vector k
+    Jmap_cmap = 'terrain'
     #vector_k = np.array([-3,-12])
     
     # map of cost function
     J = np.zeros((len(tested_values),len(tested_values)))*np.nan
     for i,k0 in enumerate(tested_values):
         for j,k1 in enumerate(tested_values):
-            vector_k = np.array([k0,k1])
-            J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
-    
-    print(J[-1,0])
+            vector_k0k1 = np.array([k0,k1])
+            J[j,i] = cost(vector_k0k1, time, fc, TAx, TAy, Uo, Vo, Ri)
     
     # plotting iterations of minimization
     if PLOT_ITERATIONS:
@@ -615,25 +623,26 @@ if True:
         vector_k_iter = np.zeros((len(vector_k),maxiter))
         vector_k_iter[:,0] = vector_k
         txt_add = 'k0'+str(vector_k[0])+'_k1'+str(vector_k[1])
-        for k in range(maxiter):
+        for k in range(1,maxiter):
             res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                         method='L-BFGS-B',
                         jac=grad_cost,
                         options={'disp': True, 'maxiter': k})
-        
             vector_k_iter[:,k] = res['x']
             cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
     else:
         txt_add = ''
 
     # PLOTTING
+    cmap = mpl.colormaps.get_cmap(Jmap_cmap)
+    cmap.set_bad(color='indianred')
     fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-    s = ax.pcolormesh(tested_values,tested_values,J,cmap='terrain',norm=matplotlib.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
+    s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=mpl.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
     plt.colorbar(s,ax=ax)
     if PLOT_ITERATIONS:
         plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
-    ax.set_xlabel('log(k0)')
-    ax.set_ylabel('log(k1)')
+    ax.set_xlabel('log(k1)')
+    ax.set_ylabel('log(k0)')
     plt.savefig(path_save_png+'k0k1_J_1layer'+txt_add+'.png')
     
 
