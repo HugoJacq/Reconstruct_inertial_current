@@ -606,7 +606,7 @@ if True:
     PLOT_ITERATIONS = True
     tested_values = np.arange(-15,0,0.25)  # -15,0,0.25
     maxiter = 15
-    vector_k = np.array([-6,-12]) # initial vector k
+    vector_k = np.array([-12,-6]) # initial vector k
     Jmap_cmap = 'terrain'
     #vector_k = np.array([-3,-12])
     

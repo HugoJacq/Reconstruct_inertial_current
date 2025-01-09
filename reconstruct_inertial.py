@@ -16,9 +16,9 @@ import time as clock
 import scipy.optimize as opt
 from datetime import datetime, timedelta
 from dask.distributed import Client,LocalCluster
+import matplotlib as mpl
+
 start = clock.time()
-
-
 ##############
 # PARAMETERS #
 ##############
@@ -43,6 +43,7 @@ MINIMIZE = True            # find the vector K starting from pk
 maxiter=100                 # number of iteration max for MINIMIZE
 ONE_LAYER_COST_MAP = False  # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False # maps the cost function values, K0 K4 fixed
+PLOT_TRAJECTORY = False
 
 # -> PLOT
 dpi=200
@@ -53,6 +54,7 @@ filesH = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-
 filesW = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc"))
 filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc"))
 
+path_save_png1D = './png_1D/'
 path_save_LS = './'
 path_save_interp1D = './'
 
@@ -71,7 +73,6 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
     
-    
     # LARGE SCALE FIELDS --------
     print('* Getting large scale motion ...')
     
@@ -82,58 +83,20 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     dsSSH_LS = xr.open_dataset('LS_fields_SSH_'+str(box[0])+'_'+str(box[1])+'_'+str(box[2])+'_'+str(box[3])+'_'+str(box[4])+'_'+str(box[5])+'.nc')
     gUg,gVg = dsSSH_LS['Ug'],dsSSH_LS['Vg']
     # ---------------------------
-    # FILE OPENING
-    dsUV = xr.open_mfdataset(filesUV)
-    dsH = xr.open_mfdataset(filesH)
-    dsW = xr.open_mfdataset(filesW)
-    dsD = xr.open_mfdataset(filesD)
-
-    # searching for lon,lat indexes
-    glon = dsUV.lon
-    glat = dsUV.lat
-    ix = np.where((glon>=box[0])&(glon<=box[1]))[0]
-    iy = np.where((glat>=box[2])&(glat<=box[3]))[0]
-    glon = glon[ix[0]:ix[-1]+1]
-    glat = glat[iy[0]:iy[-1]+1]
-
-    # selecting data
-    gU = dsUV.SSU.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
-    gV = dsUV.SSV.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
-    gTx = dsW.geo5_u10m.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))   
-    gTy = dsW.geo5_v10m.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))           
-    gH = dsH.SSH.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
-    gMLD = dsD.KPPhbl.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
-
-    # filtering out erronous values
-    gU = xr.where(gU>1e5,np.nan,gU)
-    gV = xr.where(gV>1e5,np.nan,gV)
-    gTx = xr.where(gTx>1e5,np.nan,gTx)
-    gTy = xr.where(gTy>1e5,np.nan,gTy)
-    gH = xr.where(gH>1e5,np.nan,gH)
-
-    # Fixed values
-    nt,ny,nx = np.shape(gU) # shape of gridded U current
-    gtime = np.arange(0,nt)*3600 # time array
-    glon2,glat2 = np.meshgrid(glon,glat) # lat lon
-    fc = 2*2*np.pi/86164*np.sin(glat2[jr,ir]*np.pi/180) # Coriolis value at jr,ir
-
-    # stress as: C x wind**2
-    gTAx = 8e-6*np.sign(gTx)*gTx**2
-    gTAy = 8e-6*np.sign(gTy)*gTy**2
-
-    # ---------------------------
+    
     ## INTERPOLATION 
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
-
     print('* interpolation on unsteady ekman model timestep')
     list_files = list(filesUV) + list(filesH) + list(filesW) + list(filesD)
     interp_at_model_t_1D(dsSSH_LS, dt, ir, jr, list_files, box, path_save_interp1D)
-    ds1D_i = xr.open_dataset('LS_fieldsInterp_1D_LON-24.8_LAT45.2.nc')
+    ds1D_i = xr.open_dataset('Interp_1D_LON-24.8_LAT45.2.nc')
     
+    U,V,TAx,TAy,MLD = ds1D_i.SSU,ds1D_i.SSV,ds1D_i.TAx,ds1D_i.TAy,ds1D_i.MLD
+    fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
+    nt = len(ds1D_i.time)
+    time = np.arange(0,nt,dt)
     
-    
-    raise Exception
     # -----------------------------------------------
     # OBSERVATIONS from MITgcm
     Uo = U*np.nan
@@ -142,13 +105,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     Vo[::86400//dt] = V[::86400//dt]
     # -----------------------------------------------
     # INVERSE PROBLEM
-
     # qualité de la représentation par le modèle
     # -> permet de donner du poids aux erreurs modèles (le modèle représente d'autres truc que l'inertiel)
     # -> Si fonction cout = defaut, pas d'influence.
     Ri=Uo*0.+1 
-
-    # inverse problem
     # verification of tangeant linear func with adjoint.
     eps=1e-8
     if False:
@@ -170,11 +130,15 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         print(np.sum(MX[0]*Y[0]+MX[1]*Y[1]))
         print(np.sum(X*MtY))
 
+
+    # -----------------------------------------------
+    # ANALYSIS
+    
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         Nlayers = len(pk)//2
         print('* Minimization with '+str(Nlayers)+' layers')
-        
+                
         J = cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
         dJ = grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
 
@@ -183,17 +147,17 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
                         jac=grad_cost,
                         options={'disp': True, 'maxiter': maxiter})
         
-
-        print('     vector K solution ('+str(res.nit)+' iterations)',res['x'])
-        print('     cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
+        if np.isnan(cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri)):
+            print('The model has crashed.')
+        else:
+            print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+            print(' cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
         # vector K solution: [-3.63133021 -9.46349552]
         # cost function value with K solution: 0.36493136309782287
 
 
         # using the value of K from minimization, we get currents
         Ua, Va = unstek(time, fc, TAx,TAy, res['x'])
-
-
 
         plt.figure(figsize=(10,3),dpi=dpi)
         plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
@@ -204,46 +168,103 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         plt.ylabel('Zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
-        plt.savefig('series_reconstructed_long_'+str(Nlayers)+'layers.png')
+        plt.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers.png')
         
+    # Plotting trajectories of given vector_k
+    # plotting tool for trajectory of 'unstek' for specific vector_k
+    if PLOT_TRAJECTORY:
+        print('* Plotting trajectories/step response for different vector K')
+        list_k = [[-3.63133021,  -9.46349552], # 1 layer, minimization from [-3,-12]
+                [-5,-12], # 1 layer, hand chosen
+                [-2,-7], # 1 layer, hand chosen
+                [ -3.47586165, -9.06189063, -11.22302904, -12.43724667], # 2 layer, minimization from [-3,-8,-10,-12]
+                ]
+        
+        A_wind = 10 # m/s
+        indicator = np.zeros(len(time))
+        indicator[10:] = 1
+        step_stressY = 8e-6*np.sign(A_wind)*(indicator*A_wind)**2
+        step_stressX = np.zeros(len(time))
+        
+        for vector_k in list_k:
+            print('     ',vector_k)
+            Ua, Va = unstek(time, fc, TAx,TAy, vector_k)
+            U_step,V_step = unstek(time, fc, step_stressX,step_stressY, vector_k)
+            txt_add = ''
+            title = ''
+            for k in range(len(vector_k)):
+                txt_add += '_k'+str(k)+str(vector_k[k])
+                title += 'k'+str(k)+','    
+            title = title[:-1]+' = '+str(vector_k)
+            
+            # trajectory
+            plt.figure(figsize=(10,3),dpi=dpi)
+            plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
+            plt.plot(time/86400,Ua, c='g', label='Unsteady-Ekman zonal reconstructed from wind')
+            plt.scatter(time/86400,Uo, c='r', label='obs')
+            plt.xlabel('Time (days)')
+            plt.ylabel('Zonal current (m/s)')
+            plt.title(title)
+            plt.legend(loc=1)
+            plt.tight_layout()
+            plt.savefig(path_save_png1D+'series_reconstructed_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
+
+            # step response
+            fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
+            ax.plot(U_step,V_step,c='k')
+            #ax.scatter(U_step,V_step,marker='x',c='k')
+            ax.set_xlabel(r'U$_{E}$ (m/s)')
+            ax.set_ylabel(r'V$_{E}$ (m/s)')
+            ax.set_xlim([0,0.15])
+            ax.set_ylim([0,0.15])
+            fig.savefig(path_save_png1D+'Hodograph_from_stepTau_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')    
+      
     # looking at the cost function
     #   for a slab model (1 layer)
     if ONE_LAYER_COST_MAP:
         print('* Looking at cost function for k0,k1 in 1 layer model')
     
+        PLOT_ITERATIONS = True
+        tested_values = np.arange(-15,0,0.25)  # -15,0,0.25
         maxiter = 15
-        cost_iter = np.zeros(maxiter)
-        vector_k = np.array([-3,-12])
-        vector_k_iter = np.zeros((len(vector_k),maxiter))
-        vector_k_iter[:,0] = vector_k
-        for k in range(maxiter):
-            res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
-                        method='L-BFGS-B',
-                        jac=grad_cost,
-                        options={'disp': True, 'maxiter': k})
+        vector_k = np.array([-12,-6]) # initial vector k
+        Jmap_cmap = 'terrain'
+        #vector_k = np.array([-3,-12])
         
-            vector_k_iter[:,k] = res['x']
-            cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
-
-        # LAYER DEFINITION
-        # -> number of values = number of layers
-        # -> values = turbulent diffusion coefficient
-        tested_values = np.arange(-13,-2,0.25)
-        J = np.zeros((len(tested_values),len(tested_values)))
+        # map of cost function
+        J = np.zeros((len(tested_values),len(tested_values)))*np.nan
         for i,k0 in enumerate(tested_values):
             for j,k1 in enumerate(tested_values):
-                vector_k = np.array([k0,k1])
-                J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
+                vector_k0k1 = np.array([k0,k1])
+                J[j,i] = cost(vector_k0k1, time, fc, TAx, TAy, Uo, Vo, Ri)
         
-        
+        # plotting iterations of minimization
+        if PLOT_ITERATIONS:
+            cost_iter = np.zeros(maxiter)
+            vector_k_iter = np.zeros((len(vector_k),maxiter))
+            vector_k_iter[:,0] = vector_k
+            txt_add = 'k0'+str(vector_k[0])+'_k1'+str(vector_k[1])
+            for k in range(1,maxiter):
+                res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
+                            method='L-BFGS-B',
+                            jac=grad_cost,
+                            options={'disp': True, 'maxiter': k})
+                vector_k_iter[:,k] = res['x']
+                cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
+        else:
+            txt_add = ''
 
+        # PLOTTING
+        cmap = mpl.colormaps.get_cmap(Jmap_cmap)
+        cmap.set_bad(color='indianred')
         fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-        s = ax.pcolormesh(tested_values,tested_values,J,cmap='plasma_r',norm=matplotlib.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
+        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=mpl.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
         plt.colorbar(s,ax=ax)
-        plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
-        ax.set_xlabel('log(k0)')
-        ax.set_ylabel('log(k1)')
-        plt.savefig('k0k1_J_1layer.png')
+        if PLOT_ITERATIONS:
+            plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
+        ax.set_xlabel('log(k1)')
+        ax.set_ylabel('log(k0)')
+        plt.savefig(path_save_png1D+'k0k1_J_1layer'+txt_add+'.png')
         
     # plot de J(k1,k2), à k0 et k3 fixés à leur valeur convergée
     if TWO_LAYER_COST_MAP_K1K2:
@@ -275,7 +296,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
         ax.set_xlabel('log(k1)')
         ax.set_ylabel('log(k2)')
-        plt.savefig('k1k2_J_2layer.png')
+        plt.savefig(path_save_png1D+'k1k2_J_2layer.png')
 
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')

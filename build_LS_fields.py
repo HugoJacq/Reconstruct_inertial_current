@@ -217,7 +217,7 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
         - method : interpolation method
     OUPUT:
         - a netcdf file with time interpolated at ['ir','jr'], for 
-          currents, SSH, MLD
+          currents, SSH, MLD. Stress is added as C.U10**2
     """   
     
     # opening datasets
@@ -269,7 +269,10 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
                         {'standard_name':'eastward_wind_stress',
                             'long_name':'Eastward wind stress at 10m above water',
                             'units':'m2 s-2',})
-
+    
+    # rename MLD with its proper name
+    ds_i['MLD'] = ds_i['KPPhbl']
+    ds_i = ds_i.drop_vars(['KPPhbl'])
 
     # saving
     ds_i.attrs['interp_method'] = method
