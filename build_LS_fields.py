@@ -7,6 +7,7 @@ from numba import jit
 from joblib import Parallel, delayed
 import time as clock
 import pathlib
+from datetime import datetime, timedelta
 
 @jit(nopython=True, fastmath=True)
 def meshgrid(x, y, indexing='ij'):
@@ -116,7 +117,7 @@ def build_LS_files(files, box, path_save):
     for var in list_var:
         name_save += '_'+var
     name_save += '_' + str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '_' + str(box[4]) + '_' + str(box[5]) + '.nc'
-    if pathlib.Path(path_save).is_file():
+    if pathlib.Path(name_save).is_file():
         print(' LS file for '+str(list_var)+' is already here')
         return None       
     
@@ -133,6 +134,7 @@ def build_LS_files(files, box, path_save):
     data_vars = {}
     for var in list_var:
         print('     var is',var)
+        ds[var] = ds[var].load() # here we load only a subset of the data
         standard_name = ds[var].attrs['standard_name']
         long_name = ds[var].attrs['long_name']
         units = ds[var].attrs['units']
@@ -201,3 +203,55 @@ def build_LS_files(files, box, path_save):
     ds_LS.to_netcdf(path=name_save,mode='w')
     ds_LS.close()
     
+def interp_at_model_t_1D(dsUg, dt, ir, jr, files, box, path_save):
+    """
+    Builds a netcdf file with variable interpolated at the timestep dt.
+        initial file is global, we create a subset defined by 'box'
+
+    INPUT:
+        - dsUg: dataset with geostrophic currents, on the same grid as in 'files'
+        - dt : time step to interpolate at
+        - files: list of path for 1 variable
+        - box: list of lat lon boundaries [left,right,bottom,top]
+        - path_save: where to save the netcdf file
+    OUPUT:
+        - a netcdf file with time interpolated at ['ir','jr'], for 
+          currents, SSH, MLD
+    """   
+    
+    ds = xr.open_mfdataset(files)
+    gUg = dsUg.Ug
+    gVg = dsUg.Vg
+    list_var = list(ds.keys())    
+    # checking if file is present
+    name_save = path_save
+    for var in list_var:
+        name_save += '_'+var
+    name_box = str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '_' + str(box[4]) + '_' + str(box[5])
+    nameLocation = 'ir'+str(ir)+'jr'+str(jr)+'dt'+str(dt)
+    name_save += '_' + name_box + '_'+nameLocation+'.nc'
+    if pathlib.Path(name_save).is_file():
+        print(' Interpolated file for '+str(list_var)+' is already here')
+        return None
+    
+    # searching for lon,lat indexes
+    glon = ds.lon
+    glat = ds.lat
+    ix = np.where((glon>=box[0])&(glon<=box[1]))[0]
+    iy = np.where((glat>=box[2])&(glat<=box[3]))[0]
+    glon = glon[ix[0]:ix[-1]+1]
+    glat = glat[iy[0]:iy[-1]+1]
+    # selecting data in lat lon
+    ds = ds.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
+    ds = ds.isel(lon=ir,lat=jr)
+    
+    # new time vector
+    time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
+    for var in list_var:
+        gvar = ds[var]
+        if var=='SSU':
+            U = (gvar - gUg).interp({'time':time}).values
+        elif var=='SSV':
+            V = (gvar - gVg).interp({'time':time}).values
+        else:
+            VAR_i = gvar.interp({'time':time}).values

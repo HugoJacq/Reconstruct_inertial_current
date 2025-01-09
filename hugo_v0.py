@@ -279,6 +279,7 @@ pk=np.array([-3,-8,-10,-12]) # 2 layers
 # spatial location. We work in 1D
 ir=4
 jr=4
+path_save_png = './png_1D/'
 
 # File location
 files = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc"))
@@ -538,49 +539,106 @@ if False:
     plt.ylabel('Zonal current (m/s)')
     plt.legend(loc=1)
     plt.tight_layout()
-    plt.savefig('series_reconstructed_long_'+str(Nlayers)+'layers.png')
+    plt.savefig(path_save_png+'series_reconstructed_long_'+str(Nlayers)+'layers.png')
 
+# plotting tool for trajectory of 'unstek' for specific vector_k
+if False:
+    print('* Plotting trajectories/step response for different vector K')
+    list_k = [[-3.63133021,  -9.46349552], # 1 layer, minimization from [-3,-12]
+              [-5,-12], # 1 layer, hand chosen
+              [-2,-7], # 1 layer, hand chosen
+              [ -3.47586165, -9.06189063, -11.22302904, -12.43724667], # 2 layer, minimization from [-3,-8,-10,-12]
+              ]
+    
+    A_wind = 10 # m/s
+    indicator = np.zeros(len(time))
+    indicator[10:] = 1
+    step_stressY = 8e-6*np.sign(A_wind)*(indicator*A_wind)**2
+    step_stressX = np.zeros(len(time))
+    
+    for vector_k in list_k:
+        print('     ',vector_k)
+        Ua, Va = unstek(time, fc, TAx,TAy, vector_k)
+        U_step,V_step = unstek(time, fc, step_stressX,step_stressY, vector_k)
+        txt_add = ''
+        title = ''
+        for k in range(len(vector_k)):
+            txt_add += '_k'+str(k)+str(vector_k[k])
+            title += 'k'+str(k)+','    
+        title = title[:-1]+' = '+str(vector_k)
+        
+        # trajectory
+        plt.figure(figsize=(10,3),dpi=dpi)
+        plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
+        plt.plot(time/86400,Ua, c='g', label='Unsteady-Ekman zonal reconstructed from wind')
+        plt.scatter(time/86400,Uo, c='r', label='obs')
+        plt.xlabel('Time (days)')
+        plt.ylabel('Zonal current (m/s)')
+        plt.title(title)
+        plt.legend(loc=1)
+        plt.tight_layout()
+        plt.savefig(path_save_png+'series_reconstructed_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
+
+        # step response
+        fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
+        ax.plot(U_step,V_step,c='k')
+        #ax.scatter(U_step,V_step,marker='x',c='k')
+        ax.set_xlabel(r'U$_{E}$ (m/s)')
+        ax.set_ylabel(r'V$_{E}$ (m/s)')
+        ax.set_xlim([0,0.15])
+        ax.set_ylim([0,0.15])
+        fig.savefig(path_save_png+'Hodograph_from_stepTau_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
+    
 # looking at the cost function
 #   for a slab model (1 layer)
-if False:
+if True:
     print('* Looking at cost function for k0,k1 in 1 layer model')
-   
-    maxiter = 15
-    cost_iter = np.zeros(maxiter)
-    vector_k = np.array([-3,-12])
-    vector_k_iter = np.zeros((len(vector_k),maxiter))
-    vector_k_iter[:,0] = vector_k
-    for k in range(maxiter):
-        res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
-                    method='L-BFGS-B',
-                    jac=grad_cost,
-                    options={'disp': True, 'maxiter': k})
     
-        vector_k_iter[:,k] = res['x']
-        cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
-
-    # LAYER DEFINITION
-    # -> number of values = number of layers
-    # -> values = turbulent diffusion coefficient
-    tested_values = np.arange(-13,-2,0.25)
-    J = np.zeros((len(tested_values),len(tested_values)))
+    PLOT_ITERATIONS = False
+    tested_values = np.arange(-15,0,1) # 0.25
+    maxiter = 15
+    vector_k = np.array([-12,-6]) # initial vector k
+    #vector_k = np.array([-3,-12])
+    
+    # map of cost function
+    J = np.zeros((len(tested_values),len(tested_values)))*np.nan
     for i,k0 in enumerate(tested_values):
         for j,k1 in enumerate(tested_values):
             vector_k = np.array([k0,k1])
             J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
     
+    print(J[-1,0])
     
+    # plotting iterations of minimization
+    if PLOT_ITERATIONS:
+        cost_iter = np.zeros(maxiter)
+        vector_k_iter = np.zeros((len(vector_k),maxiter))
+        vector_k_iter[:,0] = vector_k
+        txt_add = 'k0'+str(vector_k[0])+'_k1'+str(vector_k[1])
+        for k in range(maxiter):
+            res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
+                        method='L-BFGS-B',
+                        jac=grad_cost,
+                        options={'disp': True, 'maxiter': k})
+        
+            vector_k_iter[:,k] = res['x']
+            cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
+    else:
+        txt_add = ''
 
+    # PLOTTING
     fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-    s = ax.pcolormesh(tested_values,tested_values,J,cmap='plasma_r',norm=matplotlib.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
+    s = ax.pcolormesh(tested_values,tested_values,J,cmap='terrain',norm=matplotlib.colors.LogNorm(0.1,100)) #,vmin=0.1,vmax=100
     plt.colorbar(s,ax=ax)
-    plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
+    if PLOT_ITERATIONS:
+        plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
     ax.set_xlabel('log(k0)')
     ax.set_ylabel('log(k1)')
-    plt.savefig('k0k1_J_1layer.png')
+    plt.savefig(path_save_png+'k0k1_J_1layer'+txt_add+'.png')
+    
 
 # plot de J(k1,k2), à k0 et k3 fixés à leur valeur convergée
-if True:
+if False:
     print('* Looking at cost function for k1,k2 in 2 layer model')
     # k0 a un effet linéaire (facteur de tau)
     # k3 est juste en fonction du fond
@@ -609,7 +667,7 @@ if True:
     ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
     ax.set_xlabel('log(k1)')
     ax.set_ylabel('log(k2)')
-    plt.savefig('k1k2_J_2layer.png')
+    plt.savefig(path_save_png+'k1k2_J_2layer.png')
 
 
 end = clock.time()
