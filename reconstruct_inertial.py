@@ -39,11 +39,13 @@ dt=60 # timestep of the model
 # pk=np.array([-3,-12])         # 1 layers
 pk=np.array([-3,-8,-10,-12])    # 2 layers
 # pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
-MINIMIZE = True            # find the vector K starting from pk
-maxiter=100                 # number of iteration max for MINIMIZE
-ONE_LAYER_COST_MAP = False  # maps the cost function values
+maxiter=100   # number of iteration max for MINIMIZE
+
+# -> ANALYSIS    
+MINIMIZE = False                # find the vector K starting from 'pk'
+ONE_LAYER_COST_MAP = False      # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False # maps the cost function values, K0 K4 fixed
-PLOT_TRAJECTORY = False
+PLOT_TRAJECTORY = False         # plot u(t) for a specific vector_k
 
 # -> PLOT
 dpi=200
@@ -54,6 +56,7 @@ filesH = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-
 filesW = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc"))
 filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc"))
 
+# -> list of save path
 path_save_png1D = './png_1D/'
 path_save_LS = './'
 path_save_interp1D = './'
@@ -75,7 +78,6 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # LARGE SCALE FIELDS --------
     print('* Getting large scale motion ...')
-    
     #build_LS_files(filesUV,box, my2dfilter, mytimefilter, path_save)
     build_LS_files(filesH, box, path_save_LS)
     #build_LS_files(filesW,box, my2dfilter, mytimefilter, path_save)
@@ -95,15 +97,16 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     U,V,TAx,TAy,MLD = ds1D_i.SSU,ds1D_i.SSV,ds1D_i.TAx,ds1D_i.TAy,ds1D_i.MLD
     fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
     nt = len(ds1D_i.time)
-    time = np.arange(0,nt,dt)
-    
+    time = np.arange(0,nt*dt,dt)
     # -----------------------------------------------
-    # OBSERVATIONS from MITgcm
+    
+    # OBSERVATIONS from MITgcm, 1 per day
     Uo = U*np.nan
     Vo = V*np.nan
     Uo[::86400//dt] = U[::86400//dt]
     Vo[::86400//dt] = V[::86400//dt]
     # -----------------------------------------------
+    
     # INVERSE PROBLEM
     # qualité de la représentation par le modèle
     # -> permet de donner du poids aux erreurs modèles (le modèle représente d'autres truc que l'inertiel)
@@ -129,11 +132,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
 
         print(np.sum(MX[0]*Y[0]+MX[1]*Y[1]))
         print(np.sum(X*MtY))
-
-
     # -----------------------------------------------
-    # ANALYSIS
     
+    # ANALYSIS
+    #
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         Nlayers = len(pk)//2
@@ -231,7 +233,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         Jmap_cmap = 'terrain'
         #vector_k = np.array([-3,-12])
         
-        # map of cost function
+        # map of cost function (can be //)
         J = np.zeros((len(tested_values),len(tested_values)))*np.nan
         for i,k0 in enumerate(tested_values):
             for j,k1 in enumerate(tested_values):
@@ -282,9 +284,13 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         """
         k0 = -3.47586165
         k3 = -12.43724667
+        kmin = -15
+        kmax = -4
+        step = 0.25
 
-        tested_values = np.arange(-15,-4,0.25)
+        tested_values = np.arange(kmin,kmax,step)
         J = np.zeros((len(tested_values),len(tested_values)))
+        # (can be //)
         for i,k1 in enumerate(tested_values):
             for j,k2 in enumerate(tested_values):
                 vector_k = np.array([k0,k1,k2,k3])
@@ -298,6 +304,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         ax.set_ylabel('log(k2)')
         plt.savefig(path_save_png1D+'k1k2_J_2layer.png')
 
+    
+    
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')
     plt.show()

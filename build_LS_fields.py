@@ -275,6 +275,7 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
     ds_i = ds_i.drop_vars(['KPPhbl'])
 
     # saving
+    print('     saving ...')
     ds_i.attrs['interp_method'] = method
     ds_i.attrs['produced_by'] = 'interp_at_model_t_1D'
     ds_i.attrs['model_dt'] = dt
