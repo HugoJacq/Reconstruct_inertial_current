@@ -7,23 +7,15 @@ from netCDF4 import Dataset
 import scipy
 import scipy.signal
 import scipy.interpolate
-import scipy.constants
-from matplotlib.gridspec import GridSpec
-import cartopy.crs as ccrs
-import matplotlib.ticker as mticker
-import cartopy.mpl.ticker as cticker
+#import scipy.constants
+#from matplotlib.gridspec import GridSpec
+#import cartopy.crs as ccrs
+#import matplotlib.ticker as mticker
+#import cartopy.mpl.ticker as cticker
 from datetime import datetime, timedelta
 import scipy.optimize as opt
 import xarray as xr
 import time as clock
-
-# for forcefully_redirect_stdout
-import re
-import io
-import os
-import sys
-import tempfile
-import contextlib
 
 start = clock.time()
 
@@ -41,7 +33,7 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     OUTPUT:
         - smoothed signal
     """
-    
+
     if type(s)=='xarray.core.dataarray.DataArray':
         s = s.data
     x, y = np.meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
@@ -254,16 +246,16 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
     """
     U, V = unstek(time, fc, TAx, TAy, pk)
 
-    # distance to observations
+    # distance to observations (innovation)
     # this is used in the adjoint to add a forcing where obs is available
     d_U = (Uo - U)*Ri
     d_V = (Vo - V)*Ri
     #   = 0 where no observation available
-    d_U[np.isnan(sensU)]=0.
-    d_V[np.isnan(sensV)]=0.
+    d_U[np.isnan(d_U)]=0.
+    d_V[np.isnan(d_V)]=0.
 
     # computing the gradient of cost function with TGL
-    dJ_pk = unstek_adj(time, fc, TAx, TAy, pk, [sensU,sensV])
+    dJ_pk = unstek_adj(time, fc, TAx, TAy, pk, [d_U,d_V])
 
     return - dJ_pk
 
@@ -440,6 +432,8 @@ gUg[:,0,:]=gUg[:,1,:]
 gUg[:,-1,:]=gUg[:,-2,:]
 gVg[:,:,0]=gVg[:,:,1]
 gVg[:,:,-1]=gVg[:,:,-2]
+
+
 # stress as: C x wind**2
 gTAx = 8e-6*np.sign(gTx)*gTx**2
 gTAy = 8e-6*np.sign(gTy)*gTy**2
@@ -602,7 +596,7 @@ if True:
     k0 = -3.47586165
     k3 = -12.43724667
 
-    tested_values = np.arange(-13,-4,0.25)
+    tested_values = np.arange(-15,-4,0.25)
     J = np.zeros((len(tested_values),len(tested_values)))
     for i,k1 in enumerate(tested_values):
         for j,k2 in enumerate(tested_values):
