@@ -15,7 +15,7 @@ from netCDF4 import Dataset
 import scipy
 import scipy.signal
 import scipy.interpolate
-
+import warnings
 
 def unstek(time, fc, TAx, TAy, k, return_traj=False):
     """
@@ -30,6 +30,8 @@ def unstek(time, fc, TAx, TAy, k, return_traj=False):
         - return_traj : if True, return current as complex number
     OUTPUT:
         - array of surface current
+        
+    Note: this function works with numpy arrays
     """
     K = np.exp(k)
 
@@ -46,14 +48,15 @@ def unstek(time, fc, TAx, TAy, k, return_traj=False):
     dt=time[1]-time[0]
 
     # model
-    for it in range(len(time)-1):
-        for ik in range(nl):
-            if ((ik==0)&(ik==nl-1)): 
-                U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] +K[2*ik]*TA[it] - K[2*ik+1]*(U[ik][it]) )
-            else:
-                if ik==0: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] +K[2*ik]*TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
-                elif ik==nl-1: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] )
-                else: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
+    with warnings.catch_warnings(action="ignore"): # dont show overflow results
+        for it in range(len(time)-1):
+            for ik in range(nl):
+                if ((ik==0)&(ik==nl-1)): 
+                    U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] +K[2*ik]*TA[it] - K[2*ik+1]*(U[ik][it]) )
+                else:
+                    if ik==0: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] +K[2*ik]*TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
+                    elif ik==nl-1: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] )
+                    else: U[ik][it+1] = U[ik][it] + dt*( -1j*fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
 
     if return_traj: return U
     else: return np.real(U[0]), np.imag(U[0])
@@ -72,6 +75,8 @@ def unstek_tgl(time, fc, TAx, TAy, k, dk):
         - dk    : 
     OUTPUT:
         - First layer values of the TGL for zonal/meridional current, along the time dimension
+        
+    Note: this function works with numpy arrays
     """
     K = np.exp(k)
     dK = np.exp(k)*dk
@@ -119,6 +124,8 @@ def unstek_adj(time, fc, TAx, TAy, k, d):
         - d  : innovation vector, observation forcing for [zonal,meridional] currents
     OUTPUT:
         - returns: - adjoint of vectors K
+        
+    Note: this function works with numpy arrays
     """
 
     K = np.exp(k)
@@ -188,11 +195,16 @@ def cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
         - Ri    :
     OUTPUT:
         - scalar cost
+        
+    Note: this function works with numpy arrays
     """
     U, V = unstek(time, fc, TAx, TAy, pk)
-
-    J = 0.5 * np.nansum( ((Uo - U)*Ri)**2 + ((Vo - V)*Ri)**2 )
-
+    with warnings.catch_warnings(action="ignore"): # dont show overflow results
+        J = 0.5 * np.nansum( ((Uo - U)*Ri)**2 + ((Vo - V)*Ri)**2 )
+    if np.sum( np.isnan(U) ) + np.sum(np.isnan(V))>0:
+        # some nan have been detected, the model has crashed with 'pk'
+        # so J is nan.
+        J = np.nan
     return J
 
 def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):  
@@ -210,6 +222,8 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
         - Ri    : error statistics (for now is 1)
     OUTPUT:
         - gradient of the cost function
+        
+    Note: this function works with numpy arrays
     """
     U, V = unstek(time, fc, TAx, TAy, pk)
 
@@ -220,7 +234,6 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
     #   = 0 where no observation available
     d_U[np.isnan(d_U)]=0.
     d_V[np.isnan(d_V)]=0.
-
     # computing the gradient of cost function with TGL
     dJ_pk = unstek_adj(time, fc, TAx, TAy, pk, [d_U,d_V])
 
