@@ -14,38 +14,40 @@ from model_unstek import *
 from build_LS_fields import *
 import time as clock
 import scipy.optimize as opt
-from datetime import datetime, timedelta
 from dask.distributed import Client,LocalCluster
 import matplotlib as mpl
+import sys
 
 start = clock.time()
 ##############
 # PARAMETERS #
 ##############
-# dask
-DASHBOARD = False
+# //
+DASHBOARD = False   # when using dask
+N_CPU = 12           # when using joblib
 
 # -> area of interest
 box= [-25, -24, 45., 46, 24000., 24010.] # bottom lat, top lat, left lon, right lon
-# -> spatial location. We work in 1D
+# -> index for spatial location. We work in 1D
 ir=4
 jr=4
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-dt=60 # timestep of the model
+dt = 60 # timestep of the model (s) 
 # LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-# pk=np.array([-3,-12])         # 1 layers
-pk=np.array([-3,-8,-10,-12])    # 2 layers
+pk = np.array([-3,-12])         # 1 layers
+#pk=np.array([-3,-8,-10,-12])    # 2 layers
 # pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
 maxiter=100   # number of iteration max for MINIMIZE
 
 # -> ANALYSIS    
-MINIMIZE = False                # find the vector K starting from 'pk'
-ONE_LAYER_COST_MAP = False      # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = False # maps the cost function values, K0 K4 fixed
-PLOT_TRAJECTORY = False         # plot u(t) for a specific vector_k
+MINIMIZE                = False     # find the vector K starting from 'pk'
+PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
+ONE_LAYER_COST_MAP      = False      # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+
 
 # -> PLOT
 dpi=200
@@ -94,7 +96,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     interp_at_model_t_1D(dsSSH_LS, dt, ir, jr, list_files, box, path_save_interp1D)
     ds1D_i = xr.open_dataset('Interp_1D_LON-24.8_LAT45.2.nc')
     
-    U,V,TAx,TAy,MLD = ds1D_i.SSU,ds1D_i.SSV,ds1D_i.TAx,ds1D_i.TAy,ds1D_i.MLD
+    U,V,TAx,TAy,MLD = ds1D_i.SSU.values,ds1D_i.SSV.values,ds1D_i.TAx.values,ds1D_i.TAy.values,ds1D_i.MLD
     fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
     nt = len(ds1D_i.time)
     time = np.arange(0,nt*dt,dt)
@@ -140,7 +142,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     if MINIMIZE:
         Nlayers = len(pk)//2
         print('* Minimization with '+str(Nlayers)+' layers')
-                
+ 
+        #J = cost(pk, time, fc, TAx.values, TAy.values, Uo.values, Vo.values, Ri.values)
         J = cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
         dJ = grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
 
@@ -226,19 +229,28 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     if ONE_LAYER_COST_MAP:
         print('* Looking at cost function for k0,k1 in 1 layer model')
     
-        PLOT_ITERATIONS = True
-        tested_values = np.arange(-15,0,0.25)  # -15,0,0.25
+        PLOT_ITERATIONS = False
+        PARALLEL = True
+        kmin = -15
+        kmax = 0
+        step = 0.25
         maxiter = 15
         vector_k = np.array([-12,-6]) # initial vector k
         Jmap_cmap = 'terrain'
-        #vector_k = np.array([-3,-12])
         
-        # map of cost function (can be //)
-        J = np.zeros((len(tested_values),len(tested_values)))*np.nan
-        for i,k0 in enumerate(tested_values):
-            for j,k1 in enumerate(tested_values):
-                vector_k0k1 = np.array([k0,k1])
-                J[j,i] = cost(vector_k0k1, time, fc, TAx, TAy, Uo, Vo, Ri)
+        tested_values = np.arange(kmin,kmax,step)  # -15,0,0.25
+
+        if PARALLEL:
+            J = Parallel(n_jobs=N_CPU)(delayed(
+                    cost)(np.array([k0,k1]), time, fc, TAx, TAy, Uo, Vo, Ri)
+                                    for k0 in tested_values for k1 in tested_values)
+            J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+        else:
+            J = np.zeros((len(tested_values),len(tested_values)))*np.nan
+            for i,k0 in enumerate(tested_values):
+                for j,k1 in enumerate(tested_values):
+                    vector_k0k1 = np.array([k0,k1])
+                    J[j,i] = cost(vector_k0k1, time, fc, TAx, TAy, Uo, Vo, Ri)
         
         # plotting iterations of minimization
         if PLOT_ITERATIONS:
@@ -264,8 +276,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         plt.colorbar(s,ax=ax)
         if PLOT_ITERATIONS:
             plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
-        ax.set_xlabel('log(k1)')
-        ax.set_ylabel('log(k0)')
+        ax.set_xlabel('log(k0)')
+        ax.set_ylabel('log(k1)')
         plt.savefig(path_save_png1D+'k0k1_J_1layer'+txt_add+'.png')
         
     # plot de J(k1,k2), à k0 et k3 fixés à leur valeur convergée
@@ -282,22 +294,33 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         vecteur solution :  [ -3.47586165  -9.06189063 -11.22302904 -12.43724667]
         cost function value : 0.28825167461378703
         """
+        PARALLEL = True
         k0 = -3.47586165
         k3 = -12.43724667
         kmin = -15
         kmax = -4
         step = 0.25
-
-        tested_values = np.arange(kmin,kmax,step)
-        J = np.zeros((len(tested_values),len(tested_values)))
-        # (can be //)
-        for i,k1 in enumerate(tested_values):
-            for j,k2 in enumerate(tested_values):
-                vector_k = np.array([k0,k1,k2,k3])
-                J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
+        Jmap_cmap = 'terrain'
         
+        tested_values = np.arange(kmin,kmax,step)
+        
+        if PARALLEL:
+            J = Parallel(n_jobs=N_CPU)(delayed(
+                    cost)(np.array([k0,k1,k2,k3]), time, fc, TAx, TAy, Uo, Vo, Ri)
+                                    for k1 in tested_values for k2 in tested_values)
+            J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+        else:
+            J = np.zeros((len(tested_values),len(tested_values)))
+            for i,k1 in enumerate(tested_values):
+                for j,k2 in enumerate(tested_values):
+                    vector_k = np.array([k0,k1,k2,k3])
+                    J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
+        
+        # plotting
+        cmap = mpl.colormaps.get_cmap(Jmap_cmap)
+        cmap.set_bad(color='indianred')
         fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-        s = ax.pcolormesh(tested_values,tested_values,J,cmap='plasma_r',norm=matplotlib.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
+        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=matplotlib.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
         plt.colorbar(s,ax=ax)
         ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
         ax.set_xlabel('log(k1)')
