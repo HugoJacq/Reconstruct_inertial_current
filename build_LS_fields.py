@@ -8,6 +8,7 @@ from joblib import Parallel, delayed
 import time as clock
 import pathlib
 from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 
 @jit(nopython=True, fastmath=True)
 def meshgrid(x, y, indexing='ij'):
@@ -244,14 +245,17 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
     name_save = path_save
     name_save += 'Interp_1D_LON'+str(LON)+'_LAT'+str(LAT)+'.nc'
     if pathlib.Path(name_save).is_file():
-        print(' Interpolated file 1D is already here')
+        print('     interpolated file 1D is already here')
         return None
     
+    # removing geostrophy
+    ds['SSU'].data = ds['SSU'].values - gUg[:,jr,ir].values
+    ds['SSV'].data = ds['SSV'].values - gVg[:,jr,ir].values
 
     # new time vector
     time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
     ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
-    
+        
     # stress as: C x wind**2
     gTx = ds_i.geo5_u10m
     gTy = ds_i.geo5_v10m

@@ -37,16 +37,16 @@ dt = 60 # timestep of the model (s)
 # LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-pk = np.array([-3,-12])         # 1 layers
+pk = np.array([-3,-12]) # [-3,-12]         # 1 layers
 #pk=np.array([-3,-8,-10,-12])    # 2 layers
 # pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
 maxiter=100   # number of iteration max for MINIMIZE
 
 # -> ANALYSIS    
-MINIMIZE                = False     # find the vector K starting from 'pk'
-PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
+MINIMIZE                = True     # find the vector K starting from 'pk'
+PLOT_TRAJECTORY         = True     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False      # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 
 
 # -> PLOT
@@ -146,7 +146,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         #J = cost(pk, time, fc, TAx.values, TAy.values, Uo.values, Vo.values, Ri.values)
         J = cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
         dJ = grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
-
+                
         res = opt.minimize(cost, pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                         method='L-BFGS-B',
                         jac=grad_cost,
@@ -184,7 +184,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
                 [-2,-7], # 1 layer, hand chosen
                 [ -3.47586165, -9.06189063, -11.22302904, -12.43724667], # 2 layer, minimization from [-3,-8,-10,-12]
                 ]
-        
+        PLOT_MLD = True
+                
         A_wind = 10 # m/s
         indicator = np.zeros(len(time))
         indicator[10:] = 1
@@ -229,13 +230,13 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     if ONE_LAYER_COST_MAP:
         print('* Looking at cost function for k0,k1 in 1 layer model')
     
-        PLOT_ITERATIONS = False
+        PLOT_ITERATIONS = True
         PARALLEL = True
         kmin = -15
         kmax = 0
         step = 0.25
-        maxiter = 15
-        vector_k = np.array([-12,-6]) # initial vector k
+        maxiter = 10
+        vector_k = np.array([-12,-12]) # initial vector k
         Jmap_cmap = 'terrain'
         
         tested_values = np.arange(kmin,kmax,step)  # -15,0,0.25

@@ -281,7 +281,7 @@ dt=60 # timestep
 #   -> number of values = number of layers
 #   -> values = turbulent diffusion coefficient
 #pk=np.array([-3,-12])  # 1 layers
-pk=np.array([-3,-2])  # 1 layers
+pk=np.array([-3,-12])  # 1 layers
 #pk=np.array([-3,-8,-10,-12]) # 2 layers
 #pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
 
@@ -515,7 +515,7 @@ dpi=200
 maxiter=100
 
 # minimization procedure of the cost function
-if False:
+if True:
     Nlayers = len(pk)//2
     print('* Minimization with '+str(Nlayers)+' layers')
     
@@ -600,7 +600,7 @@ if False:
     
 # looking at the cost function
 #   for a slab model (1 layer)
-if True:
+if False:
     print('* Looking at cost function for k0,k1 in 1 layer model')
     
     PLOT_ITERATIONS = True
