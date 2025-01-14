@@ -238,3 +238,23 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
     dJ_pk = unstek_adj(time, fc, TAx, TAy, pk, [d_U,d_V])
 
     return - dJ_pk
+
+def score_RMSE(Ua, Va, Ut, Vt):
+    """
+    Measure of the error from 'unsteady Ekman model' to observations (Uo,Vo)
+
+    INPUT:
+        - Ua    : reconstructed zonal current (m/s)
+        - Va    : reconstructed meridional current (m/s)
+        - Ut    : true zonal current (m/s)
+        - Vt    : true meridional current (m/s)
+    OUTPUT:
+        - scalar, RMSe score
+        
+    Note: this function works with numpy arrays
+    """
+    nt = len(Ua)
+    RMS_u = np.sqrt( np.sum( (Ua-Ut)**2 / nt) )
+    RMS_v = np.sqrt( np.sum( (Va-Vt)**2 / nt) )
+
+    return RMS_u,RMS_v

@@ -265,12 +265,12 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
     # adding the stress to the variables
     ds_i['TAx'] = (ds_i.geo5_u10m.dims,
                         gTAx.data,
-                        {'standard_name':'eastward_wind_stress',
+                        {'standard_name':'eastward_wind_stress_from_CdUU',
                             'long_name':'Eastward wind stress at 10m above water',
                             'units':'m2 s-2',})
     ds_i['TAy'] = (ds_i.geo5_v10m.dims,
                         gTAy.data,
-                        {'standard_name':'eastward_wind_stress',
+                        {'standard_name':'eastward_wind_stress_from_CdUU',
                             'long_name':'Eastward wind stress at 10m above water',
                             'units':'m2 s-2',})
     
