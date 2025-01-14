@@ -12,6 +12,7 @@ import scipy.signal
 import scipy.interpolate
 import warnings
 import time as clock
+from tools import *
 
 def unstek(time, fc, TAx, TAy, k, return_traj=False):
     """
@@ -253,7 +254,7 @@ def score_RMSE(Ua, Va, Ut, Vt):
 
     return RMS_u,RMS_v
 
-def score_PSDerr(time, Ua, Va, Ut, Vt):
+def score_PSDerr(time, Ua, Va, Ut, Vt, show_score=False, smooth_PSD=False):
     """
     Measure of the error from 'unsteady Ekman model' to observations (Uo,Vo)
     
@@ -267,10 +268,38 @@ def score_PSDerr(time, Ua, Va, Ut, Vt):
         - Va    : reconstructed meridional current (m/s)
         - Ut    : true zonal current (m/s)
         - Vt    : true meridional current (m/s)
+        - show_score : boolean, if true then the value of score=0.5 is returned
+        - smooth_PSD : boolean, whether to smooth or not
     OUTPUT:
         - f : frequency
         - score : 1- PSD( Ua-Ut ) / PSD(Ut)
+        
+    Tobedone : V component
     """
+    # for smoothing filter
+    window = 1001 # odd
+    order = 4
+    
+    
+    Err = np.abs(Ua - Ut)
+    f,PSD_e = detrended_PSD(time,Err)
+    f,PSD_s = detrended_PSD(time,Ut)
+    score = 1 - PSD_e/PSD_s
+    
+    if smooth_PSD or show_score:
+        smoothed = savitzky_golay(score,window,order)
+    
+    if show_score:
+        f_score = smoothed[0]
+        # find first occurence of score = 0.5
+        for ik in range(len(f)-1,0,-1):
+            if smoothed[ik] < 0.5:
+                f_score = f[ik]
+                break
+        return f, score, f_score, smoothed
+    elif smooth_PSD and not show_score:
+        return f, score, smoothed
+    else: return f,score
     
     
     
