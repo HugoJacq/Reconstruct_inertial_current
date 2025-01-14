@@ -252,3 +252,25 @@ def score_RMSE(Ua, Va, Ut, Vt):
     RMS_v = np.sqrt( np.sum( (Va-Vt)**2 / nt) )
 
     return RMS_u,RMS_v
+
+def score_PSDerr(time, Ua, Va, Ut, Vt):
+    """
+    Measure of the error from 'unsteady Ekman model' to observations (Uo,Vo)
+    
+    METHOD: 
+    
+        Score = 1- PSD( Ua-Ut ) / PSD(Ut), if score > 0.5 then it is well reconstructed
+
+    INPUT:
+        - time  : dimensions of U
+        - Ua    : reconstructed zonal current (m/s)
+        - Va    : reconstructed meridional current (m/s)
+        - Ut    : true zonal current (m/s)
+        - Vt    : true meridional current (m/s)
+    OUTPUT:
+        - f : frequency
+        - score : 1- PSD( Ua-Ut ) / PSD(Ut)
+    """
+    
+    
+    

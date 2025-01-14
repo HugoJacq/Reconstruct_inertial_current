@@ -192,8 +192,6 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         # cost function value with K solution: 0.36493136309782287
         
         
-        
-
         # using the value of K from minimization, we get currents
         Ua, Va = unstek(time, fc, TAx,TAy, res['x'])
         RMSE = score_RMSE(Ua, Va, U, V)
@@ -202,17 +200,32 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             title += 'k'+str(k)+','   
         title = title[:-1]+' = '+str(res['x']) + ' ('+str(np.round(RMSE[0],3))+')'
         
+        # PLOT trajectory
         plt.figure(figsize=(10,3),dpi=dpi)
-        plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
-        plt.plot(time/86400,Ua, c='g', label='Unsteady-Ekman zonal reconstructed from wind')
+        plt.plot(time/86400,U, c='k', lw=2, label='LLC ref')
+        plt.plot(time/86400,Ua, c='g', label='Unstek')
         plt.scatter(time/86400,Uo, c='r', label='obs')
-        # plt.axis([31.5,60, -0.7,1.2])
         plt.title(title)
         plt.xlabel('Time (days)')
-        plt.ylabel('Zonal current (m/s)')
+        plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
         plt.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers.png')
+        
+        # Plot MLD
+        fig, ax = plt.subplots(2,1,figsize = (10,6),constrained_layout=True,dpi=dpi)
+        ax[0].plot(time/86400,U, c='k', lw=2, label='LLC ref')
+        ax[0].plot(time/86400,Ua, c='g', label='Unstek')
+        ax[0].scatter(time/86400,Uo, c='r', label='obs')
+        ax[0].set_title(title)
+        ax[0].set_ylabel('Ageo zonal current (m/s)')
+        ax[0].legend(loc=1)
+        
+        ax[1].plot(time/86400, - MLD, c='k')
+        ax[1].set_xlabel('Time (days)')
+        ax[1].set_ylabel('MLD (m)')
+        fig.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers_withMLD.png')
+        
         
     # Plotting trajectories of given vector_k
     # plotting tool for trajectory of 'unstek' for specific vector_k
