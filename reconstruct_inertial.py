@@ -18,6 +18,7 @@ from dask.distributed import Client,LocalCluster
 import matplotlib as mpl
 import sys
 import glob
+import os
 from optimparallel import minimize_parallel
 
 start = clock.time()
@@ -35,14 +36,15 @@ ir=4
 jr=4
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-PARALLEL_MINIMIZED = False
-TRUE_WIND_STRESS = True # whether to use Cd.U**2 or Tau
-dt = 60 # timestep of the model (s) 
+PARALLEL_MINIMIZED = True
+PRINT_INFO = False          # only if PARALLEL_MINIMIZED
+TRUE_WIND_STRESS = True     # whether to use Cd.U**2 or Tau
+dt = 60                     # timestep of the model (s) 
 # LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-pk = np.array([-3,-12]) # [-3,-12]         # 1 layers
-#pk=np.array([-3,-8,-10,-12])    # 2 layers
+#pk = np.array([-3,-12]) # [-3,-12]         # 1 layers
+pk=np.array([-3,-8,-10,-12])    # 2 layers
 # pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
 maxiter=100   # number of iteration max for MINIMIZE
 
@@ -65,14 +67,19 @@ filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-
 filesTau = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc"))
 
 # -> list of save path
-path_save_png1D = './png_1D/'
+path_save_png1D = './png_1D'
 path_save_LS = './'
 path_save_interp1D = './'
 
 # END PARAMETERS #################################
-
+if TRUE_WIND_STRESS: path_save_png1D = path_save_png1D + '_Tau/'
+else: path_save_png1D = path_save_png1D + '_UU/'
+    
 
 if __name__ == "__main__":  # This avoids infinite subprocess creation
+    
+    if not os.path.isdir(path_save_png1D):
+        os.system('mkdir '+path_save_png1D)
     
     global client
     client = None
@@ -157,7 +164,6 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     #
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
-        VERBOSE = True
         Nlayers = len(pk)//2
         print('* Minimization with '+str(Nlayers)+' layers')
  
@@ -168,7 +174,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         if PARALLEL_MINIMIZED:
             res = minimize_parallel(fun=cost, x0=pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                               jac=grad_cost,
-                              parallel={'loginfo': True, 'max_workers':N_CPU,'verbose':VERBOSE,'time':True},
+                              parallel={'loginfo': True, 'max_workers':N_CPU,'verbose':PRINT_INFO,'time':True},
                               options={'maxiter': maxiter})
         else:
             res = opt.minimize(cost, pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
@@ -214,7 +220,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         print('* Plotting trajectories/step response for different vector K')
         
         if TRUE_WIND_STRESS:
-            list_k = [[-12,-15]]
+            list_k = [[-9.39864959, -9.23882757]]
         else:
             list_k = [[-3.63133021,  -9.46349552], # 1 layer, minimization from [-3,-12]
                     [-5,-12], # 1 layer, hand chosen
@@ -273,7 +279,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         PARALLEL = True
         kmin = -15
         kmax = 0
-        step = 1
+        step = 0.25
         maxiter = 10
         vector_k = np.array([-12,-12]) # initial vector k
         Jmap_cmap = 'terrain'
@@ -331,16 +337,28 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         # -> number of values = number of layers
         # -> values = turbulent diffusion coefficient
         """
-        vecteur solution :  [ -3.47586165  -9.06189063 -11.22302904 -12.43724667]
-        cost function value : 0.28825167461378703
+        with Cd.U**2:
+            vecteur solution :  [ -3.47586165  -9.06189063 -11.22302904 -12.43724667]
+            cost function value : 0.28825167461378703
+        with true Tau:
+            vecteur solution :  [ -9.14721791, -8.79469884, -11.20512638, -12.5794675]
+            cost function value : 0.24744266411643656
         """
         PARALLEL = True
-        k0 = -3.47586165
-        k3 = -12.43724667
-        kmin = -15
-        kmax = -4
         step = 0.25
         Jmap_cmap = 'terrain'
+        if TRUE_WIND_STRESS:
+            k0 = -9.14721791
+            k3 = -12.5794675
+            k1_mini = -8.79469884
+            k2_mini = -11.20512638
+            kmin,kmax = -15, -1
+        else:
+            k0 = -3.47586165
+            k3 = -12.43724667
+            k1_mini = -9.06189063
+            k2_mini = -11.22302904
+            kmin,kmax = -15, -4
         
         tested_values = np.arange(kmin,kmax,step)
         
@@ -360,9 +378,9 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)
         cmap.set_bad(color='indianred')
         fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=mpl.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
+        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=mpl.colors.LogNorm(0.1,10000)) #,vmin=0.1,vmax=100
         plt.colorbar(s,ax=ax)
-        ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
+        ax.scatter(k1_mini, k2_mini,marker='x',c='g')
         ax.set_xlabel('log(k1)')
         ax.set_ylabel('log(k2)')
         plt.savefig(path_save_png1D+'k1k2_J_2layer.png')

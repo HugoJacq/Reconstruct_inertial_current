@@ -73,7 +73,7 @@ def unstek_tgl(time, fc, TAx, TAy, k, dk):
         - First layer values of the TGL for zonal/meridional current, along the time dimension
         
     Note: this function works with numpy arrays
-    """
+    """    
     K = np.exp(k)
     dK = np.exp(k)*dk
 
@@ -123,7 +123,6 @@ def unstek_adj(time, fc, TAx, TAy, k, d):
         
     Note: this function works with numpy arrays
     """
-
     K = np.exp(k)
 
     U = unstek(time, fc, TAx, TAy, k, return_traj=True)
@@ -171,7 +170,6 @@ def unstek_adj(time, fc, TAx, TAy, k, d):
 
                     #dU[ik][it+1] = dU[ik][it] + dt*( -1j*fc*dU[ik][it] -dK[2*ik]*(U[ik][it]-U[ik-1][it]) -K[2*ik]*(dU[ik][it]-dU[ik-1][it]) - dK[2*ik+1]*(U[ik][it]-U[ik+1][it]) - K[2*ik+1]*(dU[ik][it]-dU[ik+1][it]) )
 
-
     ad_k = np.exp(k)*ad_K
 
     return np.real(ad_k)
@@ -203,7 +201,7 @@ def cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
         J = np.nan
     return J
 
-def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):  
+def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri,):  
     """
     Computes the gradient of the cost function for 'unstek'
 
@@ -221,7 +219,7 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri):
         
     Note: this function works with numpy arrays
     """
-    U, V = unstek(time, fc, TAx, TAy, pk)
+    U, V = unstek(time, fc, TAx, TAy, pk,)
 
     # distance to observations (innovation)
     # this is used in the adjoint to add a forcing where obs is available
