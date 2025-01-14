@@ -17,6 +17,7 @@ import scipy.optimize as opt
 from dask.distributed import Client,LocalCluster
 import matplotlib as mpl
 import sys
+import glob
 from optimparallel import minimize_parallel
 
 start = clock.time()
@@ -27,8 +28,6 @@ start = clock.time()
 DASHBOARD = False   # when using dask
 N_CPU = 12           # when using joblib
 
-TRUE_WIND_STRESS = True # whether to use Cd.U**2 or Tau
-
 # -> area of interest
 box= [-25, -24, 45., 46, 24000., 24010.] # bottom lat, top lat, left lon, right lon
 # -> index for spatial location. We work in 1D
@@ -36,7 +35,8 @@ ir=4
 jr=4
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-PARALLEL_MINIMIZED = True
+PARALLEL_MINIMIZED = False
+TRUE_WIND_STRESS = True # whether to use Cd.U**2 or Tau
 dt = 60 # timestep of the model (s) 
 # LAYER DEFINITION
 #        number of values = number of layers
@@ -103,7 +103,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     ds1D_i = xr.open_dataset('Interp_1D_LON-24.8_LAT45.2.nc')
     
     U,V,MLD = ds1D_i.SSU.values,ds1D_i.SSV.values,ds1D_i.MLD
-    bulkTx,bulkTy,oceTx,oceTy = ds1D_i.TAx.values,ds1D_i.TAy.values,ds1D_i.oceTAUX,ds1D_i.oceTAUY
+    bulkTx,bulkTy,oceTx,oceTy = ds1D_i.TAx.values,ds1D_i.TAy.values,ds1D_i.oceTAUX.values,ds1D_i.oceTAUY.values
     fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
     nt = len(ds1D_i.time)
     time = np.arange(0,nt*dt,dt)
@@ -162,14 +162,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         print('* Minimization with '+str(Nlayers)+' layers')
  
         #J = cost(pk, time, fc, TAx.values, TAy.values, Uo.values, Vo.values, Ri.values)
-        t1 = clock.time()
         J = cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
-        t2 = clock.time()
         dJ = grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
-        t3 = clock.time()
-        print('J :',t2-t1)
-        print('gradcost :',t3-t2)
-        raise Exception
         
         if PARALLEL_MINIMIZED:
             res = minimize_parallel(fun=cost, x0=pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
@@ -366,7 +360,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)
         cmap.set_bad(color='indianred')
         fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
-        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=matplotlib.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
+        s = ax.pcolormesh(tested_values,tested_values,J,cmap=cmap,norm=mpl.colors.LogNorm(0.1,1000)) #,vmin=0.1,vmax=100
         plt.colorbar(s,ax=ax)
         ax.scatter(-9.06189063, -11.22302904,marker='x',c='g')
         ax.set_xlabel('log(k1)')

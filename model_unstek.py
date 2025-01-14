@@ -7,15 +7,11 @@ Including function needed for 4Dvar (TGL, adjoint, cost function and gradient of
 To be used with 'reconstruct_inertial.py'
 """
 import numpy as np
-import matplotlib.pylab as plt
-import matplotlib
-import pdb 
-import glob
-from netCDF4 import Dataset
-import scipy
+import matplotlib as mpl
 import scipy.signal
 import scipy.interpolate
 import warnings
+import time as clock
 
 def unstek(time, fc, TAx, TAy, k, return_traj=False):
     """
