@@ -58,3 +58,9 @@ png_1D_UU/PSDscore_1layers_k0-3.63133021_k1-9.46349552.png
 png_1D_UU/PSDscore_1layers_k0-5_k1-12.png
 png_1D_UU/PSDscore_2layers_k0-3.47586165_k1-9.06189063_k2-11.22302904_k3-12.43724667.png
 __pycache__/tools.cpython-311.pyc
+png_1D_Tau/PSDscore_2layers_k0-9.14721791_k1-8.79469884_k2-14_k3-12.5794675.png
+png_1D_Tau/series_reconstructed_2layers_k0-9.14721791_k1-8.79469884_k2-14_k3-12.5794675.png
+tests_jax/NOJAX_series_reconstructed_long_1layers_withMLD.png
+tests_jax/NOJAX_series_reconstructed_long_1layers.png
+tests_jax/__pycache__/unstek.cpython-311.pyc
+.gitignore

@@ -38,7 +38,7 @@ jr=4
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 PARALLEL_MINIMIZED = False
 PRINT_INFO = False          # only if PARALLEL_MINIMIZED
-TRUE_WIND_STRESS = False     # whether to use Cd.U**2 or Tau
+TRUE_WIND_STRESS = True     # whether to use Cd.U**2 or Tau
 dt = 60                     # timestep of the model (s) 
 # LAYER DEFINITION
 #        number of values = number of layers
@@ -49,12 +49,13 @@ pk=np.array([-3,-8,-10,-12])    # 2 layers
 maxiter=100   # number of iteration max for MINIMIZE
 
 
-# -> ANALYSIS    
+# -> ANALYSIS   
+MAP_1D_LOCATION         = True 
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = True     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False      # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
-
+# note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
 dpi=200
@@ -113,9 +114,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     bulkTx,bulkTy,oceTx,oceTy = ds1D_i.TAx.values,ds1D_i.TAy.values,ds1D_i.oceTAUX.values,ds1D_i.oceTAUY.values
     fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
     nt = len(ds1D_i.time)
-    time = np.arange(0,nt*dt,dt)
+    time = np.arange(0,nt*dt,dt)    # 1 step every dt
+    timeO = np.arange(0,nt/60*3600,3600)   # 1 step every hour
     # -----------------------------------------------
-    
+        
     # wind stress
     if TRUE_WIND_STRESS:
         TAx,TAy = oceTx,oceTy
@@ -162,6 +164,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # ANALYSIS
     #
+    # Where am i ?
+    if MAP_1D_LOCATION:
+        print('tbd')
+    
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         Nlayers = len(pk)//2
@@ -225,17 +231,17 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         ax[1].set_xlabel('Time (days)')
         ax[1].set_ylabel('MLD (m)')
         fig.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers_withMLD.png')
-    
-        
-        
+      
     # Plotting trajectories of given vector_k
     # plotting tool for trajectory of 'unstek' for specific vector_k
     if PLOT_TRAJECTORY:
         print('* Plotting trajectories/step response for different vector K')
         
         if TRUE_WIND_STRESS:
-            list_k = [[-9.39864959, -9.23882757],
-                      [ -9.14721791, -8.79469884, -11.20512638, -12.5794675]]
+            list_k = [[-9.39864959, -9.23882757], # mini with 2 layers
+                      [ -9.14721791, -8.79469884, -11.20512638, -12.5794675], # mini with 2 layers
+                      [ -9.14721791, -8.79469884, -14, -12.5794675], # hand chosen
+                      ] 
         else:
             list_k = [[-3.63133021,  -9.46349552], # 1 layer, minimization from [-3,-12]
                     [-5,-12], # 1 layer, hand chosen
@@ -256,8 +262,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             Ua, Va = unstek(time, fc, TAx,TAy, vector_k)
             U_step,V_step = unstek(time, fc, step_stressX,step_stressY, vector_k)
             RMSE = score_RMSE(Ua, Va, U, V)
-            freq,PSD_score,f_score,smoothed_PSD = score_PSDerr(time/3600, Ua, Va, U, V, show_score=True,smooth_PSD=True)
-            print(smoothed_PSD[-1])
+            
+            freq,PSD_score,f_score,smoothed_PSD = score_PSDerr(timeO/3600, Ua[::3600//dt], Va[::3600//dt], U[::3600//dt], V[::3600//dt],
+                                                               show_score=True,smooth_PSD=True)
+            #print(smoothed_PSD[-1])
             
             txt_add = ''
             title = ''
@@ -288,8 +296,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             ax.set_xlabel('hours')
             ax.set_ylabel('PSD score')
             ax.hlines(0.5,0.03,720,colors='grey',linestyles='--')
-            ax.set_ylim([0,1])
-            ax.set_xlim([1/freq[-1],10])
+            #ax.set_ylim([0,1])
+            ax.set_xlim([1/freq[1],1/freq[-1]])
             ax.set_xscale('log')
             fig.savefig(path_save_png1D+'PSDscore_'+str(Nlayers)+'layers'+txt_add+'.png')# PSD err
             

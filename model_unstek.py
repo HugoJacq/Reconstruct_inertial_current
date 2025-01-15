@@ -234,7 +234,7 @@ def grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri,):
 
     return - dJ_pk
 
-def score_RMSE(Ua, Va, Ut, Vt):
+def score_RMSE_component(Ua, Va, Ut, Vt):
     """
     Measure of the error from 'unsteady Ekman model' to observations (Uo,Vo)
 
@@ -244,13 +244,12 @@ def score_RMSE(Ua, Va, Ut, Vt):
         - Ut    : true zonal current (m/s)
         - Vt    : true meridional current (m/s)
     OUTPUT:
-        - scalar, RMSe score
+        - scalar, RMSe score for each current component
         
     Note: this function works with numpy arrays
     """
-    nt = len(Ua)
-    RMS_u = np.sqrt( np.sum( (Ua-Ut)**2 / nt) )
-    RMS_v = np.sqrt( np.sum( (Va-Vt)**2 / nt) )
+    RMS_u = score_RMSE( Ua,Ut )
+    RMS_v = score_RMSE( Va,Vt )
 
     return RMS_u,RMS_v
 
@@ -277,13 +276,15 @@ def score_PSDerr(time, Ua, Va, Ut, Vt, show_score=False, smooth_PSD=False):
     Tobedone : V component
     """
     # for smoothing filter
-    window = 1001 # odd
+    window = 51 # odd
     order = 4
     
     
     Err = np.abs(Ua - Ut)
     f,PSD_e = detrended_PSD(time,Err)
     f,PSD_s = detrended_PSD(time,Ut)
+    # f,PSD_e = PSD(time,Err)
+    # f,PSD_s = PSD(time,Ut)
     score = 1 - PSD_e/PSD_s
     
     if smooth_PSD or show_score:
@@ -302,4 +303,6 @@ def score_PSDerr(time, Ua, Va, Ut, Vt, show_score=False, smooth_PSD=False):
     else: return f,score
     
     
-    
+# rotary spectra
+# https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2022JD037139
+# et demander à Clément ses scripts
