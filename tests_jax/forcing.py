@@ -22,12 +22,4 @@ class Forcing1D:
         else:
             self.TAx,self.TAy = self.bulkTx,self.bulkTy
         
-    def get_obs(self, period_obs):
-        """
-        OSSE of current from the coupled OA model
-        """
-        self.Uo = self.U*np.nan
-        self.Vo = self.V*np.nan
-        self.Uo[::period_obs//self.dt] = self.U[::period_obs//self.dt]
-        self.Vo[::period_obs//self.dt] = self.V[::period_obs//self.dt]
-        return self.Uo,self.Vo
+    

@@ -64,3 +64,10 @@ tests_jax/NOJAX_series_reconstructed_long_1layers_withMLD.png
 tests_jax/NOJAX_series_reconstructed_long_1layers.png
 tests_jax/__pycache__/unstek.cpython-311.pyc
 .gitignore
+tests_jax/JAX_series_reconstructed_long_1layers.png
+tests_jax/JAX_series_reconstructed_long_2layers.png
+tests_jax/NOJAX_series_reconstructed_long_2layers.png
+tests_jax/__pycache__/forcing.cpython-311.pyc
+tests_jax/__pycache__/inv.cpython-311.pyc
+tests_jax/__pycache__/junstek.cpython-311.pyc
+tests_jax/__pycache__/observations.cpython-311.pyc
