@@ -18,10 +18,6 @@ class Observation1D:
         """
         OSSE of current from the coupled OA model
         """
-        # self.Uo = self.U*np.nan
-        # self.Vo = self.V*np.nan
-        # self.Uo[::self.obs_period//self.dt] = self.U[::self.obs_period//self.dt]
-        # self.Vo[::self.obs_period//self.dt] = self.V[::self.obs_period//self.dt]
         self.Uo = self.U[::self.obs_period//self.dt]
         self.Vo = self.V[::self.obs_period//self.dt]
         return self.Uo,self.Vo

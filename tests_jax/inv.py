@@ -72,13 +72,6 @@ class Variational:
         d_U, d_V = np.zeros(len(U)), np.zeros(len(V))
         d_U[::self.obs_period//self.model_dt] = (self.observations.Uo - U[::self.obs_period//self.model_dt])*self.Ri
         d_V[::self.obs_period//self.model_dt] = (self.observations.Vo - V[::self.obs_period//self.model_dt])*self.Ri
-        
-        
-        # d_U = (self.observations.Uo - U)*self.Ri
-        # d_V = (self.observations.Vo - V)*self.Ri
-        #   = 0 where no observation available
-        # d_U[np.isnan(d_U)]=0.
-        # d_V[np.isnan(d_V)]=0.
         # computing the gradient of cost function with TGL
         dJ_pk = self.adjoint(pk, [d_U,d_V])
 
@@ -105,22 +98,9 @@ class Variational:
             A = U[::self.obs_period//self.model_dt]
             B = V[::self.obs_period//self.model_dt]
             J = 0.5 * jnp.nansum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
-        # here use lax.cond 
-        
-        # def cond(pred, true_fun, false_fun, operand):
-        #     if pred:
-        #         return true_fun(operand)
-        #     else:
-        #         return false_fun(operand)
-        
-        # if jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0:
-        #     # some nan have been detected, the model has crashed with 'pk'
-        #     # so J is nan.
-        #     J = jnp.nan
-            
-        # cond = jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0    
-        # J = jax.lax.select( cond, jnp.nan, J)
-        #jax.debug.print("jax.debug.print(J) -> {x}", x=J)
+        # TO DO: 
+        # here use lax.cond 
+        # to detect if nan like 'nojax_grad_cost'
         return J
  
     def jax_grad_cost(self, pk):
