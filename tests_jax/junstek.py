@@ -5,12 +5,9 @@ import warnings
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax import jit,grad,lax
+from jax import jit,grad, lax, jvp, vjp
+from functools import partial
 
-
-cpu_device = jax.devices('cpu')[0]
-jax.config.update('jax_platform_name', 'cpu')
-print(jax.devices())
 
 class jUnstek1D:
     """
@@ -27,117 +24,115 @@ class jUnstek1D:
         self.fc = jnp.asarray(forcing.fc)  
         # obs
         Co = observations.get_obs()
-        self.Uo, self.Vo = jnp.asarray(Co[0]), jnp.array(Co[1])
+        self.Uo, self.Vo = Co[0], Co[1]
         self.Ri = self.Uo*0.+1
         # for reconstructed 
         self.nl = Nl
         self.isJax = True
-        
+
         # JIT compiled functions
         self.do_forward_jit = jit(self.do_forward)
-        self.cost_jit = jit(self.cost)
-        self.grad_cost_jit = jit(self.grad_cost)
         
-    def K_transform(self, pk):
-        return jnp.exp(pk)
-    
-    def one_step(self, it, arg0):
+    def K_transform(self, pk, order=0, function='exp'):
         """
-        1 time step advance
+        Transform the K vector to improve minimization process
         
         INPUT:
             - pk : K vector
-            - it: current time step
-            - U: velocity at current time step 
+            - order : 1 is derivative
+            - function : string of the name of the function
         OUTPUT:
-            - U: updated velocity at next time step 
+            - f(k) or f'(k)
+        """  
+        if function=='exp':
+            return jnp.exp(pk).astype('complex')
+        else:
+            raise Exception('K_transform function '+function+' is not available, retry')
+
+    def one_step(self, it, arg0):
+        """
+        1 time step advance
+        (same as no jax version)
+        
+        INPUT:
+        - pk : K vector
+        - it: current time step
+        - U: velocity at current time step 
+        OUTPUT:
+        - U: updated velocity at next time step 
         """
         pk ,U = arg0
         K = self.K_transform(pk)
-        
+
         for ik in range(self.nl):
             if ((ik==0)&(ik==self.nl-1)): 
-                #U[ik][it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) )
                 U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
             else:
-                if ik==0: 
-                    #U[ik][it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
-                    U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-                elif ik==self.nl-1: 
-                    #U[ik][it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] )
-                    U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
-                else: 
-                    #U[ik][it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) )
-                    U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+                if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+                elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
+                else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
         return pk, U
-    
-    def do_forward(self, pk, return_traj=False):
+
+    def do_forward(self, pk, U0):
         """
         Unsteady Ekman model forward model
-        
+
         for 1 layer: dU/dt = -j*fc*U + K0*Tau - K1*U
 
         INPUT:
-            - pk     : list of boundaries of layer(s)
-            - return_traj : if True, return current as complex number
+        - pk     : list of boundaries of layer(s)
+        - U0    : initial value of complex current
         OUTPUT:
-            - array of surface current
-            
+        - array of surface current
+
         Note: this function works with numpy arrays
         """ 
         if len(pk)//2!=self.nl:
             raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
-        else:
-            K = self.K_transform(pk)
-            
-            
-        U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
-        arg0 = pk, U0
-        with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            _, U0 = lax.fori_loop(0,self.nt-1,self.one_step,arg0)
-            
-            # for it in range(self.nt-1):
-            #     U0 = self.one_step(pk, it,U0)
-        if return_traj: 
-            self.Ur_traj = U0
-            return U0
-        else: 
-            self.Ua,self.Va = jnp.real(U0[0,:]), jnp.imag(U0[0,:])
-            return self.Ua,self.Va
-        
-    def cost(self, pk):
-        """
-        Computes the cost function of reconstructed current vs observations
 
-        INPUT:
-            - pk     : K vector
-            - Uo    : U current observation
-            - Vo    : V current observation
-            - Ri    : error on the observation
-        OUTPUT:
-            - scalar cost
-            
-        Note: this function works with numpy arrays
-        """
-        U, V = self.do_forward(pk)
+        U = jnp.zeros( (self.nl,self.nt), dtype='complex')
+
+        U = U.at[:,:].set(U0) # here U.at[:,0].set(U0) doesnt work i dont know why
+        arg0 = pk, U
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            J = 0.5 * jnp.nansum( ((self.Uo - U)*self.Ri)**2 + ((self.Vo - V)*self.Ri)**2 )
-        # here use lax.cond 
-        
-        # def cond(pred, true_fun, false_fun, operand):
-        #     if pred:
-        #         return true_fun(operand)
-        #     else:
-        #         return false_fun(operand)
-        
-        # if jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0:
-        #     # some nan have been detected, the model has crashed with 'pk'
-        #     # so J is nan.
-        #     J = jnp.nan
-            
-        cond = jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0    
-        J = jax.lax.select( cond, jnp.nan, J)
-        return J
+            _, U = lax.fori_loop(0,self.nt,self.one_step,arg0)
+           
+        self.Ur_traj = U
+        self.Ua,self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
+
+        return pk, U
     
-    def grad_cost(self, pk):
-        return grad(self.cost)(pk)
+
+    # def tgl(self, k0, dk0):
+    #     U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+    #     dU0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+    #     K0 = self.K_transform(k0)
+    #     dK0 = self.K_transform(k0, order=1)*dk0
+    #     _, (dK,dU) = jvp(self.do_forward_jit, (K0, U0), (dK0, dU0) )
+    #     return dK,dU
+
+    # def adjoint(self, pk0, d):
+    #     """
+    #     Computes the adjoint of the vector K for 'unstek'
+
+    #     INPUT:
+    #         - pk0 : K vector
+    #         - d  : innovation vector, observation forcing for [zonal,meridional] currents
+    #     OUTPUT:
+    #         - returns: - adjoint of vectors K
+            
+    #     Note: this function works with jax arrays
+    #     # this function is old and should not be used
+    #     """
+        
+    #     ad_U0 = jnp.zeros((self.nl,self.nt), dtype='complex')            
+    #     ad_U0 = ad_U0.at[:,:].add( d[0] + 1j*d[1] )
+        
+    #     ad_K0 = jnp.zeros(len(pk0)).astype('complex')
+    #     #jax.debug.print("jax.debug.print(ad_K0) -> {x}", x=ad_K0)
+    #     U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+        
+                   
+    #     _, adf = vjp( self.do_forward, pk0, U0)
+    #     ad_K = adf( (ad_K0, ad_U0) )[0]
+    #     return jnp.real(ad_K)

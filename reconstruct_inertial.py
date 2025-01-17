@@ -38,7 +38,7 @@ jr=4
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 PARALLEL_MINIMIZED = False
 PRINT_INFO = False          # only if PARALLEL_MINIMIZED
-TRUE_WIND_STRESS = True     # whether to use Cd.U**2 or Tau
+TRUE_WIND_STRESS = False     # whether to use Cd.U**2 or Tau
 dt = 60                     # timestep of the model (s) 
 # LAYER DEFINITION
 #        number of values = number of layers
@@ -142,7 +142,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     Ri=Uo*0.+1 
     # verification of tangeant linear func with adjoint.
     eps=1e-8
-    if False:
+    if True:
+        pk = np.array([-3.,-12.])
         Ua, Va = unstek(time, fc, TAx,TAy, pk)
         Ua1,Va1 = unstek(time, fc, TAx,TAy, pk+eps*pk)
 
@@ -156,10 +157,12 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
 
         MX = unstek_tgl(time, fc, TAx, TAy, pk, X)
         Y = [Ua,Va]
-        MtY =   (time, fc, TAx, TAy, pk, Y)
+        MtY = unstek_adj(time, fc, TAx, TAy, pk, Y)
 
         print(np.sum(MX[0]*Y[0]+MX[1]*Y[1]))
         print(np.sum(X*MtY))
+                
+        raise Exception
     # -----------------------------------------------
     
     # ANALYSIS

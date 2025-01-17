@@ -253,8 +253,11 @@ def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='l
     ds['SSV'].data = ds['SSV'].values - gVg[:,jr,ir].values
 
     # new time vector
-    time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
-    ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
+    if False:
+        time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
+        ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
+    if True:
+        print('toto')
         
     # stress as: C x wind**2
     gTx = ds_i.geo5_u10m

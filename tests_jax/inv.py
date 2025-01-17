@@ -14,9 +14,18 @@ class Variational:
         self.inJax = model.isJax
         self.Ri = model.Ri
         self.observations = observations
+        self.obs_period = observations.obs_period
+        self.model_dt = model.dt
         self.model = model
+        self.param = []
+        self.J = []
+        self.G = []
 
-        
+        # JAX
+        self.jax_grad_cost_jit = jit(self.jax_grad_cost)
+        self.jax_cost_jit = jit(self.jax_cost)
+  
+    
   
     def nojax_cost(self, pk):
         """
@@ -29,9 +38,14 @@ class Variational:
             
         Note: this function works with numpy arrays
         """
-        U, V = self.model.do_forward(pk)
+        U_0 = np.zeros((self.model.nl), dtype='complex')
+        _, C = self.model.do_forward(pk,U_0)
+        U, V = np.real(C),np.imag(C)
+        
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            J = 0.5 * np.nansum( ((self.observations.Uo - U)*self.Ri)**2 + ((self.observations.Vo - V)*self.Ri)**2 )
+            A = U[::self.obs_period//self.model_dt]
+            B = V[::self.obs_period//self.model_dt]
+            J = 0.5 * np.nansum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         if np.sum( np.isnan(U) ) + np.sum(np.isnan(V))>0:
             # some nan have been detected, the model has crashed with 'pk'
             # so J is nan.
@@ -49,19 +63,28 @@ class Variational:
             
         Note: this function works with numpy arrays
         """
-        U, V = self.model.do_forward(pk)
+        U_0 = np.zeros((self.model.nl), dtype='complex')
+        _, C = self.model.do_forward(pk,U_0)
+        U, V = np.real(C),np.imag(C)
 
         # distance to observations (innovation)
         # this is used in the adjoint to add a forcing where obs is available
-        d_U = (self.observations.Uo - U)*self.Ri
-        d_V = (self.observations.Vo - V)*self.Ri
+        d_U, d_V = np.zeros(len(U)), np.zeros(len(V))
+        d_U[::self.obs_period//self.model_dt] = (self.observations.Uo - U[::self.obs_period//self.model_dt])*self.Ri
+        d_V[::self.obs_period//self.model_dt] = (self.observations.Vo - V[::self.obs_period//self.model_dt])*self.Ri
+        
+        
+        # d_U = (self.observations.Uo - U)*self.Ri
+        # d_V = (self.observations.Vo - V)*self.Ri
         #   = 0 where no observation available
-        d_U[np.isnan(d_U)]=0.
-        d_V[np.isnan(d_V)]=0.
+        # d_U[np.isnan(d_U)]=0.
+        # d_V[np.isnan(d_V)]=0.
         # computing the gradient of cost function with TGL
         dJ_pk = self.adjoint(pk, [d_U,d_V])
 
         return -dJ_pk
+    
+    
     
     def jax_cost(self, pk):
         """
@@ -69,17 +92,19 @@ class Variational:
 
         INPUT:
             - pk     : K vector
-            - Uo    : U current observation
-            - Vo    : V current observation
-            - Ri    : error on the observation
         OUTPUT:
             - scalar cost
             
         Note: this function works with numpy arrays
         """
-        U, V = self.model.do_forward(pk)
+        U0 = jnp.zeros((self.model.nl), dtype='complex')
+        _, C = self.model.do_forward_jit(pk, U0)
+        U, V = jnp.real(C)[0], jnp.imag(C)[0]
+        
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            J = 0.5 * jnp.nansum( ((self.observations.Uo - U)*self.Ri)**2 + ((self.observations.Vo - V)*self.Ri)**2 )
+            A = U[::self.obs_period//self.model_dt]
+            B = V[::self.obs_period//self.model_dt]
+            J = 0.5 * jnp.nansum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         # here use lax.cond 
         
         # def cond(pred, true_fun, false_fun, operand):
@@ -93,25 +118,64 @@ class Variational:
         #     # so J is nan.
         #     J = jnp.nan
             
-        cond = jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0    
-        J = jax.lax.select( cond, jnp.nan, J)
+        # cond = jnp.sum( jnp.isnan(U) ) + jnp.sum(jnp.isnan(V))>0    
+        # J = jax.lax.select( cond, jnp.nan, J)
+        #jax.debug.print("jax.debug.print(J) -> {x}", x=J)
         return J
  
     def jax_grad_cost(self, pk):
-        """
-        """
-        return grad(self.jax_cost)(pk)
-    
-    def cost(self, pk):
-        if self.inJax:
-            return self.jax_cost(pk)
-        else:
-            return self.nojax_cost(pk)
+        # """
+        # grad of cost function, using JAX.
+        # We benefit from JAX at the computation of the adjoint.
+        # this function exist because it will be used with scipy.opt.minimize 
+        # """
+        # # grad_cost using 'grad' from JAX
+        # #return grad(self.jax_cost)(pk)
+        
+        
+        # # using the adjoint
+        # U0 = jnp.zeros((self.model.nl,self.model.nt), dtype='complex')
+        # _, C = self.model.do_forward_jit(pk, U0)
+        # U, V = jnp.real(C), jnp.imag(C)
+        # #U, V, _ = self.model.do_forward_jit(pk)
 
-    def grad_cost(self, pk):
+        # # distance to observations (innovation)
+        # # this is used in the adjoint to add a forcing where obs is available
+        # d_U = (self.observations.Uo - U)*self.Ri
+        # d_V = (self.observations.Vo - V)*self.Ri
+        # #   = 0 where no observation available
+        # # d_U[np.isnan(d_U)]=0.
+        # # d_V[np.isnan(d_V)]=0.
+        # d_U = jnp.where( jnp.isnan(d_U), 0, d_U )
+        # d_V = jnp.where( jnp.isnan(d_V), 0, d_V )
+        # d = jnp.asarray([d_U,d_V])
+        # # computing the gradient of cost function with TGL
+        # dJ_pk = self.model.adjoint(pk, d)
+        # return dJ_pk
+        
+        """
+        Using grad from JAX
+        """
+        return jnp.real( grad(self.jax_cost_jit)(pk) )
+            
+    
+    
+    def cost(self, pk, save_iter=False):
         if self.inJax:
-            return self.jax_grad_cost(pk)
+            J = jit(self.jax_cost)(pk)
+        else:
+            J = self.nojax_cost(pk)
+        if save_iter:
+            self.J.append(J)
+        return float(J)   
+    
+    def grad_cost(self, pk, save_iter=False):
+        if self.inJax:
+            G = self.jax_grad_cost_jit(pk)
         else:
             self.adjoint = self.model.adjoint
             self.tgl = self.model.tgl
-            return  self.nojax_grad_cost(pk)
+            G =  self.nojax_grad_cost(pk)
+        if save_iter:
+            self.G.append(G)
+        return np.array(G)
