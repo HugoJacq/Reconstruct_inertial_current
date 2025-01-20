@@ -73,3 +73,8 @@ tests_jax/__pycache__/junstek.cpython-311.pyc
 tests_jax/__pycache__/observations.cpython-311.pyc
 tests_jax/series_reconstructed_long.png
 save_script/series_reconstructed_long.png
+png_1D_UU/series_reconstructed_long_1layers_withMLD.png
+__pycache__/forcing.cpython-311.pyc
+__pycache__/inv.cpython-311.pyc
+__pycache__/observations.cpython-311.pyc
+__pycache__/unstek.cpython-311.pyc

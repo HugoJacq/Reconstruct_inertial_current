@@ -21,18 +21,13 @@ import glob
 import os
 from optimparallel import minimize_parallel
 
-from observations import *
-from forcing import *
-from unstek import *
-from inv import *
-
 start = clock.time()
 ##############
 # PARAMETERS #
 ##############
 # //
 DASHBOARD = False   # when using dask
-N_CPU = 12          # when using joblib
+N_CPU = 12           # when using joblib
 
 # -> area of interest
 box= [-25, -24, 45., 46, 24000., 24010.] # bottom lat, top lat, left lon, right lon
@@ -40,33 +35,26 @@ box= [-25, -24, 45., 46, 24000., 24010.] # bottom lat, top lat, left lon, right 
 ir=4
 jr=4
 
-
-# observations : OSSE
+# -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
+PARALLEL_MINIMIZED = False
+PRINT_INFO = False          # only if PARALLEL_MINIMIZED
 TRUE_WIND_STRESS = False     # whether to use Cd.U**2 or Tau
 dt = 60                     # timestep of the model (s) 
-period_obs = 86400 # s, how many second between observations
-
 # LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
-#vector_k=np.array([-3,-8,-10,-12])    # 2 layers
+#pk = np.array([-3,-12]) # [-3,-12]         # 1 layers
+pk=np.array([-3,-8,-10,-12])    # 2 layers
+# pk=np.array([-2,-4,-6,-8,-10,-12]) # 3 layers
+maxiter=100   # number of iteration max for MINIMIZE
 
-# -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-MINIMIZE = True
-PRINT_INFO = False          # only if PARALLEL_MINIMIZED
-save_iter = False           # save iteration during minimize
-maxiter = 100
-PARALLEL_MINIMIZED = False # there is a bug with TRUE
-N_CPU = 12
-PRINT_INFO = False
 
 # -> ANALYSIS   
-MAP_1D_LOCATION         = False 
+MAP_1D_LOCATION         = True 
 MINIMIZE                = False     # find the vector K starting from 'pk'
-PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
+PLOT_TRAJECTORY         = True     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False      # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -106,11 +94,12 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # LARGE SCALE FIELDS --------
     print('* Getting large scale motion ...')
-    #build_LS_files(filesUV,box, path_save_LS)
+    #build_LS_files(filesUV,box, my2dfilter, mytimefilter, path_save)
     build_LS_files(filesH, box, path_save_LS)
-    #build_LS_files(filesW,box, path_save_LS)
-    #build_LS_files(filesD,box, path_save_LS)
+    #build_LS_files(filesW,box, my2dfilter, mytimefilter, path_save)
+    #build_LS_files(filesD,box, my2dfilter, mytimefilter, path_save)
     dsSSH_LS = xr.open_dataset('LS_fields_SSH_'+str(box[0])+'_'+str(box[1])+'_'+str(box[2])+'_'+str(box[3])+'_'+str(box[4])+'_'+str(box[5])+'.nc')
+    gUg,gVg = dsSSH_LS['Ug'],dsSSH_LS['Vg']
     # ---------------------------
     
     ## INTERPOLATION 
@@ -119,65 +108,61 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     print('* interpolation on unsteady ekman model timestep')
     list_files = list(filesUV) + list(filesH) + list(filesW) + list(filesD) + list(filesTau)
     interp_at_model_t_1D(dsSSH_LS, dt, ir, jr, list_files, box, path_save_interp1D)
+    ds1D_i = xr.open_dataset('Interp_1D_LON-24.8_LAT45.2.nc')
     
-    # observation and forcing
-    path_file = 'Interp_1D_LON-24.8_LAT45.2.nc'
-    forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)   
-    observations = Observation1D(period_obs, dt, path_file)
-    Uo,Vo = observations.get_obs()
-    U, V = forcing.U, forcing.V
-    
-    # intialisation of the model
-    Nl = len(vector_k)//2
-    model = Unstek1D(Nl, forcing, observations)
-    var = Variational(model, observations)
+    U,V,MLD = ds1D_i.SSU.values,ds1D_i.SSV.values,ds1D_i.MLD
+    bulkTx,bulkTy,oceTx,oceTy = ds1D_i.TAx.values,ds1D_i.TAy.values,ds1D_i.oceTAUX.values,ds1D_i.oceTAUY.values
+    fc = 2*2*np.pi/86164*np.sin(ds1D_i.lat.values*np.pi/180) # Coriolis value at jr,ir
+    nt = len(ds1D_i.time)
+    time = np.arange(0,nt*dt,dt)    # 1 step every dt
+    timeO = np.arange(0,nt/60*3600,3600)   # 1 step every hour
+    # -----------------------------------------------
         
+    # wind stress
+    if TRUE_WIND_STRESS:
+        TAx,TAy = oceTx,oceTy
+    else:
+        TAx,TAy = bulkTx,bulkTy
+    
+    # fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
+    # ax.plot(time,TAx)
+    # plt.show()
+    
+    # OBSERVATIONS from MITgcm, 1 per day
+    Uo = U*np.nan
+    Vo = V*np.nan
+    Uo[::86400//dt] = U[::86400//dt]
+    Vo[::86400//dt] = V[::86400//dt]
+    # -----------------------------------------------
+    
     # INVERSE PROBLEM
-    # verification of tangeant linear func with adjoint.
+    # qualité de la représentation par le modèle
     # -> permet de donner du poids aux erreurs modèles (le modèle représente d'autres truc que l'inertiel)
     # -> Si fonction cout = defaut, pas d'influence.
-    if False:
-        print('gradient test')
-        pk=np.array([-3,-12])
-        
-        Nl = len(pk)//2
-        model = Unstek1D(Nl, forcing, observations)
-        
-        eps=1e-8
+    Ri=Uo*0.+1 
+    # verification of tangeant linear func with adjoint.
+    eps=1e-8
+    if True:
+        pk = np.array([-3.,-12.])
+        Ua, Va = unstek(time, fc, TAx,TAy, pk)
+        Ua1,Va1 = unstek(time, fc, TAx,TAy, pk+eps*pk)
 
-        _, Ca = model.do_forward(pk)
-        Ua, Va = np.real(Ca), np.imag(Ca)
+        dUa, dVa = unstek_tgl(time, fc, TAx,TAy, pk, pk)
 
-        _, Ca1 = model.do_forward(pk+eps*pk)
-        Ua1, Va1 = np.real(Ca1), np.imag(Ca1)
-        
-        print(Ua)
-        print(Ua1)
-        
-        dCa = model.tgl(pk, pk)
-        dUa, dVa = np.real(dCa), np.imag(dCa)
         print(dUa)
-        
-        
         print((Ua1-Ua)/eps)
-        #print(np.sum((Ua1-Ua)))
-        
-        _, Ca = model.do_forward(pk)
-        Ua, Va = np.real(Ca), np.imag(Ca)
+
+        Ua, Va = unstek(time, fc, TAx,TAy, pk)
         X=+pk
 
-        dU = model.tgl(pk, X)
-        MX = [np.real(dU),np.imag(dU)]
+        MX = unstek_tgl(time, fc, TAx, TAy, pk, X)
         Y = [Ua,Va]
-        MtY =  model.adjoint(pk, Y)
+        MtY = unstek_adj(time, fc, TAx, TAy, pk, Y)
 
-        # the two next print should be equal
         print(np.sum(MX[0]*Y[0]+MX[1]*Y[1]))
         print(np.sum(X*MtY))
-        # the next print should be << 1
-        print( (np.abs(np.sum(MX[0]*Y[0]+MX[1]*Y[1]) - np.sum(X*MtY)))/ np.abs(np.sum(X*MtY)))
-        
-        raise Exception(' the gradient test is finished')
+                
+        raise Exception
     # -----------------------------------------------
     
     # ANALYSIS
@@ -188,75 +173,67 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
-        print('* Minimization with '+str(Nl)+' layers')
-        t1 = clock.time()
-        _, Ca = model.do_forward(vector_k)
-        Ua, Va = jnp.real(Ca), jnp.imag(Ca)
-            
-        J = var.cost(vector_k)
-        print('J',J)
-        t2 = clock.time()
-        dJ = var.grad_cost(vector_k)
-        print('dJ',dJ)
-        print('-> time for J = ',np.round(t2 - t1,4) )
-        print('-> time for dJ = ',np.round(clock.time() - t2,4) )
+        Nlayers = len(pk)//2
+        print('* Minimization with '+str(Nlayers)+' layers')
+ 
+        #J = cost(pk, time, fc, TAx.values, TAy.values, Uo.values, Vo.values, Ri.values)
+        J = cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
+        dJ = grad_cost(pk, time, fc, TAx, TAy, Uo, Vo, Ri)
         
         if PARALLEL_MINIMIZED:
-            # this does not work with Unstek1D class
-            res = minimize_parallel(fun=var.cost, x0=vector_k, #  args=(time, fc, TAx, TAy, Uo, Vo, Ri)
-                              jac=var.grad_cost,
+            res = minimize_parallel(fun=cost, x0=pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
+                              jac=grad_cost,
                               parallel={'loginfo': True, 'max_workers':N_CPU,'verbose':PRINT_INFO,'time':True},
                               options={'maxiter': maxiter})
         else:
-            res = opt.minimize(var.cost, vector_k, args=(save_iter), # , args=(Uo, Vo, Ri)
+            res = opt.minimize(cost, pk, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                         method='L-BFGS-B',
-                        jac=var.grad_cost,
+                        jac=grad_cost,
                         options={'disp': True, 'maxiter': maxiter})
             
-        if np.isnan(var.cost(res['x'])): # , Uo, Vo, Ri
+            
+        if np.isnan(cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri)):
             print('The model has crashed.')
         else:
             print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
-            print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
-        vector_k = res['x']
+            print(' cost function value with K solution:',cost(res['x'], time, fc, TAx, TAy, Uo, Vo, Ri))
         # vector K solution: [-3.63133021 -9.46349552]
         # cost function value with K solution: 0.36493136309782287
         
         
         # using the value of K from minimization, we get currents
-        _, Ca = model.do_forward(vector_k)
-        Ua, Va = np.real(Ca),np.imag(Ca)
-        RMSE = score_RMSE(Ua, U)      
+        Ua, Va = unstek(time, fc, TAx,TAy, res['x'])
+        RMSE = score_RMSE(Ua, Va, U, V)        
         
         title = ''
         for k in range(len(res['x'])):
             title += 'k'+str(k)+','   
-        title = title[:-1]+' = '+str(res['x']) + ' ('+str(np.round(RMSE,3))+')'
+        title = title[:-1]+' = '+str(res['x']) + ' ('+str(np.round(RMSE[0],3))+')'
         
         # PLOT trajectory
         plt.figure(figsize=(10,3),dpi=dpi)
-        plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
-        plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
-        plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+        plt.plot(time/86400,U, c='k', lw=2, label='LLC ref')
+        plt.plot(time/86400,Ua, c='g', label='Unstek')
+        plt.scatter(time/86400,Uo, c='r', label='obs')
         plt.title(title)
         plt.xlabel('Time (days)')
         plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
-        plt.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nl)+'layers.png')
+        plt.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers.png')
         
         # Plot MLD
         fig, ax = plt.subplots(2,1,figsize = (10,6),constrained_layout=True,dpi=dpi)
-        ax[0].plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
-        ax[0].plot(forcing.time/86400,Ua, c='g', label='Unstek')
-        ax[0].scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+        ax[0].plot(time/86400,U, c='k', lw=2, label='LLC ref')
+        ax[0].plot(time/86400,Ua, c='g', label='Unstek')
+        ax[0].scatter(time/86400,Uo, c='r', label='obs')
         ax[0].set_title(title)
         ax[0].set_ylabel('Ageo zonal current (m/s)')
         ax[0].legend(loc=1)
-        ax[1].plot(forcing.time/86400, - forcing.MLD, c='k')
+        ax[1].plot(time/86400, - MLD, c='k')
         ax[1].set_xlabel('Time (days)')
         ax[1].set_ylabel('MLD (m)')
-        fig.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nl)+'layers_withMLD.png')
+        fig.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nlayers)+'layers_withMLD.png')
       
     # Plotting trajectories of given vector_k
     # plotting tool for trajectory of 'unstek' for specific vector_k
@@ -277,33 +254,20 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         PLOT_MLD = True
                 
         A_wind = 10 # m/s
-        indicator = np.zeros(len(forcing.time))
+        indicator = np.zeros(len(time))
         indicator[10:] = 1
         step_stressY = 8e-6*np.sign(A_wind)*(indicator*A_wind)**2
-        step_stressX = np.zeros(len(forcing.time))
-        
-        forcing_step = Forcing1D(dt, path_file, TRUE_WIND_STRESS=False)   
-        forcing_step.TAx = step_stressX
-        forcing_step.TAy = step_stressY
-        
+        step_stressX = np.zeros(len(time))
         
         for vector_k in list_k:
             print('     ',vector_k)
-            Nl = len(vector_k)//2
+            Nlayers = len(vector_k)//2
+            Ua, Va = unstek(time, fc, TAx,TAy, vector_k)
+            U_step,V_step = unstek(time, fc, step_stressX,step_stressY, vector_k)
+            RMSE = score_RMSE(Ua, Va, U, V)
             
-            # regular model
-            model = Unstek1D(Nl, forcing, observations)
-            _, Ca = model.do_forward(vector_k)
-            Ua, Va = np.real(Ca), np.imag(Ca)
-            RMSE_U = score_RMSE(Ua, U)
-            
-            # step response
-            model_step = Unstek1D(Nl, forcing_step, observations)
-            _, Cstep = model_step.do_forward(vector_k)
-            U_step,V_step = np.real(Cstep), np.imag(Cstep)
-            
-            # freq,PSD_score,f_score,smoothed_PSD = score_PSDerr(timeO/3600, Ua[::3600//dt], Va[::3600//dt], U[::3600//dt], V[::3600//dt],
-            #                                                    show_score=True,smooth_PSD=True)
+            freq,PSD_score,f_score,smoothed_PSD = score_PSDerr(timeO/3600, Ua[::3600//dt], Va[::3600//dt], U[::3600//dt], V[::3600//dt],
+                                                               show_score=True,smooth_PSD=True)
             #print(smoothed_PSD[-1])
             
             txt_add = ''
@@ -311,14 +275,14 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             for k in range(len(vector_k)):
                 txt_add += '_k'+str(k)+str(vector_k[k])
                 title += 'k'+str(k)+','    
-            title = title[:-1]+' \n '+str(vector_k) + ' \nRMSE = '+str(np.round(RMSE_U,3))
-            #title = title + ', PSDscore = '+str(np.round(1/f_score,3)) + ' hours'
+            title = title[:-1]+' \n '+str(vector_k) + ' \nRMSE = '+str(np.round(RMSE[0],3))
+            title = title + ', PSDscore = '+str(np.round(1/f_score,3)) + ' hours'
             
             # trajectory
             plt.figure(figsize=(10,3),dpi=dpi)
-            plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
-            plt.plot(forcing.time/86400,Ua, c='g', label='Unsteady-Ekman zonal reconstructed from wind')
-            plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+            plt.plot(time/86400,U, c='k', lw=2, label='LLC ref ageostrophic zonal')
+            plt.plot(time/86400,Ua, c='g', label='Unsteady-Ekman zonal reconstructed from wind')
+            plt.scatter(time/86400,Uo, c='r', label='obs')
             plt.xlabel('Time (days)')
             plt.ylabel('Zonal current (m/s)')
             plt.title(title)
@@ -327,23 +291,22 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             plt.savefig(path_save_png1D+'series_reconstructed_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
 
             # Plot PSD score
-            # TO DO: i need to plot rotary spectra
-            # fig, ax = plt.subplots(1,1,figsize = (7,5),constrained_layout=True,dpi=dpi)
-            # ax.plot(1/freq[1:],PSD_score[1:],c='k')
-            # if True:
-            #     ax.plot(1/freq[1:], smoothed_PSD[1:],c='r')
-            # ax.set_title(title)
-            # ax.set_xlabel('hours')
-            # ax.set_ylabel('PSD score')
-            # ax.hlines(0.5,0.03,720,colors='grey',linestyles='--')
-            # #ax.set_ylim([0,1])
-            # ax.set_xlim([1/freq[1],1/freq[-1]])
-            # ax.set_xscale('log')
-            # fig.savefig(path_save_png1D+'PSDscore_'+str(Nlayers)+'layers'+txt_add+'.png')# PSD err
+            fig, ax = plt.subplots(1,1,figsize = (7,5),constrained_layout=True,dpi=dpi)
+            ax.plot(1/freq[1:],PSD_score[1:],c='k')
+            if True:
+                ax.plot(1/freq[1:], smoothed_PSD[1:],c='r')
+            ax.set_title(title)
+            ax.set_xlabel('hours')
+            ax.set_ylabel('PSD score')
+            ax.hlines(0.5,0.03,720,colors='grey',linestyles='--')
+            #ax.set_ylim([0,1])
+            ax.set_xlim([1/freq[1],1/freq[-1]])
+            ax.set_xscale('log')
+            fig.savefig(path_save_png1D+'PSDscore_'+str(Nlayers)+'layers'+txt_add+'.png')# PSD err
             
             
 
-            # step response, hodograph
+            # step response
             if False:
                 fig, ax = plt.subplots(1,1,figsize = (5,5),constrained_layout=True,dpi=dpi)
                 ax.plot(U_step,V_step,c='k')
@@ -360,6 +323,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         print('* Looking at cost function for k0,k1 in 1 layer model')
     
         PLOT_ITERATIONS = False
+        PARALLEL = True
         kmin = -15
         kmax = 0
         step = 0.25
@@ -369,19 +333,17 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         
         tested_values = np.arange(kmin,kmax,step)  # -15,0,0.25
 
-        if N_CPU>1:
+        if PARALLEL:
             J = Parallel(n_jobs=N_CPU)(delayed(
-                    var.cost)(np.array([k0,k1]))
-                        for k0 in tested_values for k1 in tested_values)
+                    cost)(np.array([k0,k1]), time, fc, TAx, TAy, Uo, Vo, Ri)
+                                    for k0 in tested_values for k1 in tested_values)
             J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
         else:
             J = np.zeros((len(tested_values),len(tested_values)))*np.nan
             for i,k0 in enumerate(tested_values):
-                print(i)
                 for j,k1 in enumerate(tested_values):
-                    print('     ',j)
                     vector_k0k1 = np.array([k0,k1])
-                    J[j,i] = var.cost(vector_k0k1)
+                    J[j,i] = cost(vector_k0k1, time, fc, TAx, TAy, Uo, Vo, Ri)
         
         # plotting iterations of minimization
         if PLOT_ITERATIONS:
@@ -390,12 +352,12 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             vector_k_iter[:,0] = vector_k
             txt_add = 'k0'+str(vector_k[0])+'_k1'+str(vector_k[1])
             for k in range(1,maxiter):
-                res = opt.minimize(var.cost, vector_k,
+                res = opt.minimize(cost, vector_k, args=(time, fc, TAx, TAy, Uo, Vo, Ri),
                             method='L-BFGS-B',
-                            jac=var.grad_cost,
+                            jac=grad_cost,
                             options={'disp': True, 'maxiter': k})
                 vector_k_iter[:,k] = res['x']
-                cost_iter[k] = var.cost(vector_k_iter[:,k])
+                cost_iter[k] = cost(vector_k_iter[:,k], time, fc, TAx, TAy, Uo, Vo, Ri)
         else:
             txt_add = ''
 
@@ -446,13 +408,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             kmin,kmax = -15, -4
         
         tested_values = np.arange(kmin,kmax,step)
-        Nl = 2
-        model = Unstek1D(Nl, forcing, observations)
-        var = Variational(model, observations)
-    
-        if N_CPU>1:
+        
+        if PARALLEL:
             J = Parallel(n_jobs=N_CPU)(delayed(
-                    var.cost)(np.array([k0,k1,k2,k3]))
+                    cost)(np.array([k0,k1,k2,k3]), time, fc, TAx, TAy, Uo, Vo, Ri)
                                     for k1 in tested_values for k2 in tested_values)
             J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
         else:
@@ -460,7 +419,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             for i,k1 in enumerate(tested_values):
                 for j,k2 in enumerate(tested_values):
                     vector_k = np.array([k0,k1,k2,k3])
-                    J[j,i] = var.cost(vector_k)
+                    J[j,i] = cost(vector_k, time, fc, TAx, TAy, Uo, Vo, Ri)
         
         # plotting
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)
