@@ -5,7 +5,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit,grad,lax
-
+from functools import partial
 
 class Variational:
     """
@@ -90,14 +90,14 @@ class Variational:
             
         Note: this function works with numpy arrays
         """
-        U0 = jnp.zeros((self.model.nl), dtype='complex')
-        _, C = self.model.do_forward_jit(pk, U0)
+        
+        _, C = self.model.do_forward_jit(pk)
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
-        with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            A = U[::self.obs_period//self.model_dt]
-            B = V[::self.obs_period//self.model_dt]
-            J = 0.5 * jnp.nansum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
+        #with warnings.catch_warnings(action="ignore"): # dont show overflow results
+        A = U[::self.obs_period//self.model_dt]
+        B = V[::self.obs_period//self.model_dt]
+        J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         # TO DO: 
         # here use lax.cond 
         # to detect if nan like 'nojax_grad_cost'
@@ -136,13 +136,14 @@ class Variational:
         """
         Using grad from JAX
         """
-        return jnp.real( grad(self.jax_cost_jit)(pk) )
+        return grad(self.jax_cost_jit)(pk)
+        #return jnp.real( grad(self.jax_cost_jit)(pk) )        
             
     
     
     def cost(self, pk, save_iter=False):
         if self.inJax:
-            J = jit(self.jax_cost)(pk)
+            J = self.jax_cost_jit(pk)
         else:
             J = self.nojax_cost(pk)
         if save_iter:
@@ -152,6 +153,7 @@ class Variational:
     def grad_cost(self, pk, save_iter=False):
         if self.inJax:
             G = self.jax_grad_cost_jit(pk)
+            print(jax.make_jaxpr(self.jax_grad_cost_jit)(pk))
         else:
             self.adjoint = self.model.adjoint
             self.tgl = self.model.tgl

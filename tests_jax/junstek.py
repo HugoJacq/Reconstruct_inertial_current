@@ -32,6 +32,7 @@ class jUnstek1D:
 
         # JIT compiled functions
         self.do_forward_jit = jit(self.do_forward)
+        self.K_transform_jit = jit(self.K_transform)
         
     def K_transform(self, pk, order=0, function='exp'):
         """
@@ -49,7 +50,72 @@ class jUnstek1D:
         else:
             raise Exception('K_transform function '+function+' is not available, retry')
 
-    def one_step(self, it, arg0):
+    def __Onelayer(self, arg1):
+        """
+        1 time iteration of unstek model when 1 layer
+        """
+        it, K, U = arg1
+        ik = 0
+        U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
+        return it, K, U
+        
+    def __Nlayer(self,arg1):
+        """
+        1 time iteration of unstek model when N layer
+        """        
+        
+        it, K, U = arg1
+        _, _, U = lax.fori_loop(0,self.nl,self.__do_layer_k,arg1)
+        return it, K, U
+    
+    def __do_layer_k(self, ik, arg1):
+        """
+        At time 'it', solve unstek for layer 'ik' when using N layer
+        """
+        
+        it, K, U = arg1 
+               
+        # condition : surface layer ?
+        U = lax.select( ik==0,                                 
+                    U.at[ik, it+1].set( 
+                                U[ik][it] + 
+                                self.dt*( 
+                                    - 1j*self.fc*U[ik][it] 
+                                    + K[2*ik]*self.TA[it] 
+                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ),          
+                    U )
+        
+        # condition : last layer ?
+        U = lax.select( ik==self.nl-1,                
+                    U.at[ik,it+1].set( 
+                                U[ik][it] + 
+                                self.dt*( 
+                                         - 1j*self.fc*U[ik][it] 
+                                         - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
+                                         - K[2*ik+1]*U[ik][it] ) ),       
+                    U )
+    
+        # condition : in between ?
+        U = lax.select( ((ik>0)&(ik<self.nl-1)),      
+                        U.at[ik,it+1].set( U[ik][it] + 
+                                        self.dt*( 
+                                            - 1j*self.fc*U[ik][it] 
+                                            - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
+                                            - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ), 
+                        U )
+        
+        
+        return it, K, U
+        
+        # if ((ik==0)&(ik==self.nl-1)): 
+        #     U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
+        # else:
+        #     if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        #     elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
+        #     else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+    
+    
+    def __one_step(self, it, arg0):
         """
         1 time step advance
         (same as no jax version)
@@ -62,18 +128,28 @@ class jUnstek1D:
         - U: updated velocity at next time step 
         """
         pk ,U = arg0
-        K = self.K_transform(pk)
+        K = self.K_transform_jit(pk)
 
-        for ik in range(self.nl):
-            if ((ik==0)&(ik==self.nl-1)): 
-                U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
-            else:
-                if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-                elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
-                else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        arg1 = it, K, U
+        # loop on layers
+        _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
+                            self.__Onelayer,    # if 1 layer, ik=0
+                            self.__Nlayer,      # else, loop on layers
+                            arg1)   
+
+        # old, work but slow
+        # performance is comparable to not using __Nlayer because there is a few layers
+        # for ik in range(self.nl):
+        #     if ((ik==0)&(ik==self.nl-1)): 
+        #         U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
+        #     else:
+        #         if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        #         elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
+        #         else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        
         return pk, U
 
-    def do_forward(self, pk, U0):
+    def do_forward(self, pk):
         """
         Unsteady Ekman model forward model
 
@@ -85,17 +161,20 @@ class jUnstek1D:
         OUTPUT:
         - array of surface current
 
-        Note: this function works with numpy arrays
+        Note: 
+            - The use of 'lax.fori_loop' on time loop greatly reduce exectution speed
+            - The use of 'lax.fori_loop' on layer loop has close execution time with not using it, 
+                because there is only a few layers
         """ 
         if len(pk)//2!=self.nl:
             raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 
+        # starting from nul current
         U = jnp.zeros( (self.nl,self.nt), dtype='complex')
 
-        U = U.at[:,:].set(U0) # here U.at[:,0].set(U0) doesnt work i dont know why
         arg0 = pk, U
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            _, U = lax.fori_loop(0,self.nt,self.one_step,arg0)
+            _, U = lax.fori_loop(1,self.nt,self.__one_step,arg0)
            
         self.Ur_traj = U
         self.Ua,self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer

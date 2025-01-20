@@ -20,7 +20,7 @@ import optax
 import optax.tree_utils as otu
 jax.config.update("jax_enable_x64", True)
 #jax.config.update("jax_debug_nans", True)
-cpu_device = jax.devices('cpu')[0]
+#cpu_device = jax.devices('cpu')[0]
 jax.config.update('jax_platform_name', 'cpu')
 print(jax.devices())
 
@@ -55,7 +55,7 @@ U, V = forcing.U, forcing.V
 ##########
 # Normal #
 ##########
-if True:
+if False:
     t1 = clock.time()
     
     model = Unstek1D(Nl, forcing, observations)
@@ -67,17 +67,19 @@ if True:
     print('pk',pk)
     
     # testing the functions
-    if False:
+    if True:
         U_0 = jnp.zeros((model.nl), dtype='complex')
         _, Ca = model.do_forward(pk, U_0)
         Ua, Va = jnp.real(Ca), jnp.imag(Ca)
             
         J = var.cost(pk)
         print('J',J)
-        
+        t2 = clock.time()
         dJ = var.grad_cost(pk)
         print('dJ',dJ)
-    
+        print('-> time for J = ',np.round(t2 - t1,4) )
+        print('-> time for dJ = ',np.round(clock.time() - t2,4) )
+        raise Exception
         if False:
             print('gradient test')
             pk=np.array([-3,-12])
@@ -167,25 +169,28 @@ if True:
     t1 = clock.time()
     model = jUnstek1D(Nl, forcing, observations)
     var = Variational(model, observations)
+    U_0 = jnp.zeros((model.nl), dtype='complex')
     
-    pk = vector_k
+    pk = jnp.asarray(vector_k)
     print('pk',pk)
         
     
     # testing the functions
-    if False:
+    if True:
         
-        U_0 = jnp.zeros((model.nl), dtype='complex')
-        _, Ca = model.do_forward_jit(pk, U_0)
+        U_0 = np.zeros((model.nl), dtype='complex')
+        _, Ca = model.do_forward_jit(pk)
         Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         
         
         J = var.cost(pk)
         print('J',J)
-        
+        t2 = clock.time()
         dJ = var.grad_cost(pk)
         print('dJ',dJ)
-        
+        print('-> time for J = ',np.round(t2 - t1,4) )
+        print('-> time for dJ = ',np.round(clock.time() - t2,4) )
+        raise Exception
 
     # To do later : jax this minimization
     # maybe see: 
@@ -205,7 +210,7 @@ if True:
     
     _, Ca2 = model.do_forward_jit(pk,U_0)
     Ua2, Va2 = np.real(Ca2)[0],np.imag(Ca2)[0]
-    RMSE = score_RMSE(Ua, U)  
+    RMSE = score_RMSE(Ua2, U)  
        
     # PLOT
     title = ''
