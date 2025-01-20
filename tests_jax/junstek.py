@@ -84,7 +84,6 @@ class jUnstek1D:
                                     + K[2*ik]*self.TA[it] 
                                     - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ),          
                     U )
-        
         # condition : last layer ?
         U = lax.select( ik==self.nl-1,                
                     U.at[ik,it+1].set( 
@@ -94,7 +93,6 @@ class jUnstek1D:
                                          - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
                                          - K[2*ik+1]*U[ik][it] ) ),       
                     U )
-    
         # condition : in between ?
         U = lax.select( ((ik>0)&(ik<self.nl-1)),      
                         U.at[ik,it+1].set( U[ik][it] + 
@@ -103,22 +101,12 @@ class jUnstek1D:
                                             - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
                                             - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ), 
                         U )
-        
-        
         return it, K, U
-        
-        # if ((ik==0)&(ik==self.nl-1)): 
-        #     U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
-        # else:
-        #     if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-        #     elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
-        #     else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-    
     
     def __one_step(self, it, arg0):
         """
         1 time step advance
-        (same as no jax version)
+
         
         INPUT:
         - pk : K vector
@@ -128,7 +116,7 @@ class jUnstek1D:
         - U: updated velocity at next time step 
         """
         pk ,U = arg0
-        K = self.K_transform_jit(pk)
+        K = self.K_transform(pk)
 
         arg1 = it, K, U
         # loop on layers
@@ -137,7 +125,7 @@ class jUnstek1D:
                             self.__Nlayer,      # else, loop on layers
                             arg1)   
 
-        # old, work but slow
+        # old, work but slow (same as no jax version)
         # performance is comparable to not using __Nlayer because there is a few layers
         # for ik in range(self.nl):
         #     if ((ik==0)&(ik==self.nl-1)): 

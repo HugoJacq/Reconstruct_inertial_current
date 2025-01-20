@@ -77,8 +77,7 @@ class Variational:
 
         return -dJ_pk
     
-    
-    
+      
     def jax_cost(self, pk):
         """
         Computes the cost function of reconstructed current vs observations
@@ -91,7 +90,7 @@ class Variational:
         Note: this function works with numpy arrays
         """
         
-        _, C = self.model.do_forward_jit(pk)
+        _, C = self.model.do_forward(pk) # 
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
         #with warnings.catch_warnings(action="ignore"): # dont show overflow results
@@ -103,36 +102,7 @@ class Variational:
         # to detect if nan like 'nojax_grad_cost'
         return J
  
-    def jax_grad_cost(self, pk):
-        # """
-        # grad of cost function, using JAX.
-        # We benefit from JAX at the computation of the adjoint.
-        # this function exist because it will be used with scipy.opt.minimize 
-        # """
-        # # grad_cost using 'grad' from JAX
-        # #return grad(self.jax_cost)(pk)
-        
-        
-        # # using the adjoint
-        # U0 = jnp.zeros((self.model.nl,self.model.nt), dtype='complex')
-        # _, C = self.model.do_forward_jit(pk, U0)
-        # U, V = jnp.real(C), jnp.imag(C)
-        # #U, V, _ = self.model.do_forward_jit(pk)
-
-        # # distance to observations (innovation)
-        # # this is used in the adjoint to add a forcing where obs is available
-        # d_U = (self.observations.Uo - U)*self.Ri
-        # d_V = (self.observations.Vo - V)*self.Ri
-        # #   = 0 where no observation available
-        # # d_U[np.isnan(d_U)]=0.
-        # # d_V[np.isnan(d_V)]=0.
-        # d_U = jnp.where( jnp.isnan(d_U), 0, d_U )
-        # d_V = jnp.where( jnp.isnan(d_V), 0, d_V )
-        # d = jnp.asarray([d_U,d_V])
-        # # computing the gradient of cost function with TGL
-        # dJ_pk = self.model.adjoint(pk, d)
-        # return dJ_pk
-        
+    def jax_grad_cost(self, pk):        
         """
         Using grad from JAX
         """
@@ -140,10 +110,10 @@ class Variational:
         #return jnp.real( grad(self.jax_cost_jit)(pk) )        
             
     
-    
+
     def cost(self, pk, save_iter=False):
         if self.inJax:
-            J = self.jax_cost_jit(pk)
+            J = self.jax_cost_jit(pk) #
         else:
             J = self.nojax_cost(pk)
         if save_iter:
@@ -153,7 +123,7 @@ class Variational:
     def grad_cost(self, pk, save_iter=False):
         if self.inJax:
             G = self.jax_grad_cost_jit(pk)
-            print(jax.make_jaxpr(self.jax_grad_cost_jit)(pk))
+            print(jax.make_jaxpr(self.jax_grad_cost)(pk))
         else:
             self.adjoint = self.model.adjoint
             self.tgl = self.model.tgl
