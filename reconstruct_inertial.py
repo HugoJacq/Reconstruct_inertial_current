@@ -25,6 +25,8 @@ from observations import *
 from forcing import *
 from unstek import *
 from inv import *
+from tools import *
+from scores import *
 
 start = clock.time()
 ##############
