@@ -10,8 +10,6 @@ Updates:
     - HJ 7/01/25: add comments everywhere
     - HJ 9/01/25: add build large scale variable file
 """
-from model_unstek import *
-from build_LS_fields import *
 import time as clock
 import scipy.optimize as opt
 from dask.distributed import Client,LocalCluster
@@ -21,6 +19,8 @@ import glob
 import os
 from optimparallel import minimize_parallel
 
+# custom imports
+from build_LS_fields import *
 from observations import *
 from forcing import *
 from unstek import *
