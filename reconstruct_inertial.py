@@ -14,6 +14,7 @@ import time as clock
 import scipy.optimize as opt
 from dask.distributed import Client,LocalCluster
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import sys
 import glob
 import os
