@@ -78,3 +78,8 @@ __pycache__/forcing.cpython-311.pyc
 __pycache__/inv.cpython-311.pyc
 __pycache__/observations.cpython-311.pyc
 __pycache__/unstek.cpython-311.pyc
+Inertial_current_from_MITgcm.code-workspace
+LS_fields_SSH_-25_-24_45_46.nc
+__pycache__/filters.cpython-311.pyc
+__pycache__/scores.cpython-311.pyc
+tests_jax/__pycache__/tools.cpython-311.pyc

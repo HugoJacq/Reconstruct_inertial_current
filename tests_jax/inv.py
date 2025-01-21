@@ -38,8 +38,7 @@ class Variational:
             
         Note: this function works with numpy arrays
         """
-        U_0 = np.zeros((self.model.nl), dtype='complex')
-        _, C = self.model.do_forward(pk,U_0)
+        _, C = self.model.do_forward(pk)
         U, V = np.real(C),np.imag(C)
         
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
@@ -63,8 +62,7 @@ class Variational:
             
         Note: this function works with numpy arrays
         """
-        U_0 = np.zeros((self.model.nl), dtype='complex')
-        _, C = self.model.do_forward(pk,U_0)
+        _, C = self.model.do_forward(pk)
         U, V = np.real(C),np.imag(C)
 
         # distance to observations (innovation)
@@ -75,7 +73,7 @@ class Variational:
         # computing the gradient of cost function with TGL
         dJ_pk = self.adjoint(pk, [d_U,d_V])
 
-        return -dJ_pk
+        return - dJ_pk
     
       
     def jax_cost(self, pk):
@@ -90,12 +88,15 @@ class Variational:
         Note: this function works with numpy arrays
         """
         
-        _, C = self.model.do_forward(pk) # 
+        _, C = self.model.do_forward_jit(pk) # 
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
+        
+        A = jnp.zeros( len(self.observations.time_obs), dtype='float64')
+        B = jnp.zeros( len(self.observations.time_obs), dtype='float64')
         #with warnings.catch_warnings(action="ignore"): # dont show overflow results
-        A = U[::self.obs_period//self.model_dt]
-        B = V[::self.obs_period//self.model_dt]
+        A = A.at[:].set(U[::self.obs_period//self.model_dt])
+        B = B.at[:].set(V[::self.obs_period//self.model_dt])
         J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         # TO DO: 
         # here use lax.cond 
@@ -123,7 +124,7 @@ class Variational:
     def grad_cost(self, pk, save_iter=False):
         if self.inJax:
             G = self.jax_grad_cost_jit(pk)
-            print(jax.make_jaxpr(self.jax_grad_cost)(pk))
+            #print(jax.make_jaxpr(self.jax_grad_cost)(pk))
         else:
             self.adjoint = self.model.adjoint
             self.tgl = self.model.tgl

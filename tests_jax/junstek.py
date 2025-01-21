@@ -59,49 +59,43 @@ class jUnstek1D:
         U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
         return it, K, U
         
+    def __Nlayer_midlayers_for_scan(self,X0,ik):
+        it, K, U = X0
+        U = U.at[ik,it+1].set( U[ik][it] + 
+                                self.dt*( 
+                                    - 1j*self.fc*U[ik][it] 
+                                    - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
+                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        X = it, K, U
+        return X, X
+        
     def __Nlayer(self,arg1):
         """
         1 time iteration of unstek model when N layer
         """        
         
         it, K, U = arg1
-        _, _, U = lax.fori_loop(0,self.nl,self.__do_layer_k,arg1)
-        return it, K, U
-    
-    def __do_layer_k(self, ik, arg1):
-        """
-        At time 'it', solve unstek for layer 'ik' when using N layer
-        """
+        # _, _, U = lax.fori_loop(0,self.nl,self.__do_layer_k,arg1)
         
-        it, K, U = arg1 
-               
-        # condition : surface layer ?
-        U = lax.select( ik==0,                                 
-                    U.at[ik, it+1].set( 
-                                U[ik][it] + 
+        # surface
+        ik = 0
+        U = U.at[ik, it+1].set( U[ik][it] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik][it] 
                                     + K[2*ik]*self.TA[it] 
-                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ),          
-                    U )
-        # condition : last layer ?
-        U = lax.select( ik==self.nl-1,                
-                    U.at[ik,it+1].set( 
-                                U[ik][it] + 
+                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+        # bottom
+        ik = -1
+        U = U.at[ik,it+1].set(  U[ik][it] + 
                                 self.dt*( 
-                                         - 1j*self.fc*U[ik][it] 
-                                         - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
-                                         - K[2*ik+1]*U[ik][it] ) ),       
-                    U )
-        # condition : in between ?
-        U = lax.select( ((ik>0)&(ik<self.nl-1)),      
-                        U.at[ik,it+1].set( U[ik][it] + 
-                                        self.dt*( 
-                                            - 1j*self.fc*U[ik][it] 
-                                            - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
-                                            - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) ), 
-                        U )
-        return it, K, U
+                                    - 1j*self.fc*U[ik][it] 
+                                    - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
+                                    - K[2*ik+1]*U[ik][it] ) )
+        # in between
+        X0 = it, K, U
+        final, result = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
+        it, K, U = final
+        return it, K, U    
     
     def __one_step(self, it, arg0):
         """
@@ -125,8 +119,9 @@ class jUnstek1D:
                             self.__Nlayer,      # else, loop on layers
                             arg1)   
 
-        # old, work but slow (same as no jax version)
-        # performance is comparable to not using __Nlayer because there is a few layers
+        # old, work but slow (same as no jax version)
+        # performance is comparable to not using __Nlayer because there is a few layers
+        # forward model is on par with no jax (~0.5s) but gradient is much slower (~5s)
         # for ik in range(self.nl):
         #     if ((ik==0)&(ik==self.nl-1)): 
         #         U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
@@ -136,6 +131,7 @@ class jUnstek1D:
         #         else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
         
         return pk, U
+
 
     def do_forward(self, pk):
         """
@@ -161,11 +157,14 @@ class jUnstek1D:
         U = jnp.zeros( (self.nl,self.nt), dtype='complex')
 
         arg0 = pk, U
+        X0 = pk, U
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
             _, U = lax.fori_loop(1,self.nt,self.__one_step,arg0)
-           
+            # X, _ = lax.   scan(jit(self.__one_step_for_scan), X0, jnp.arange(1,self.nt) )
+            # _, U = X
+            
         self.Ur_traj = U
-        self.Ua,self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
+        self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
 
         return pk, U
     
@@ -178,28 +177,28 @@ class jUnstek1D:
     #     _, (dK,dU) = jvp(self.do_forward_jit, (K0, U0), (dK0, dU0) )
     #     return dK,dU
 
-    # def adjoint(self, pk0, d):
-    #     """
-    #     Computes the adjoint of the vector K for 'unstek'
+    def adjoint(self, pk0, d):
+        """
+        Computes the adjoint of the vector K for 'unstek'
 
-    #     INPUT:
-    #         - pk0 : K vector
-    #         - d  : innovation vector, observation forcing for [zonal,meridional] currents
-    #     OUTPUT:
-    #         - returns: - adjoint of vectors K
+        INPUT:
+            - pk0 : K vector
+            - d  : innovation vector, observation forcing for [zonal,meridional] currents
+        OUTPUT:
+            - returns: - adjoint of vectors K
             
-    #     Note: this function works with jax arrays
-    #     # this function is old and should not be used
-    #     """
+        Note: this function works with jax arrays
+        # this function is old and should not be used
+        """
         
-    #     ad_U0 = jnp.zeros((self.nl,self.nt), dtype='complex')            
-    #     ad_U0 = ad_U0.at[:,:].add( d[0] + 1j*d[1] )
+        ad_U0 = jnp.zeros((self.nl,self.nt), dtype='complex')            
+        ad_U0 = ad_U0.at[:,:].add( d[0] + 1j*d[1] )
         
-    #     ad_K0 = jnp.zeros(len(pk0)).astype('complex')
-    #     #jax.debug.print("jax.debug.print(ad_K0) -> {x}", x=ad_K0)
-    #     U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+        ad_K0 = jnp.zeros(len(pk0)).astype('complex')
+        #jax.debug.print("jax.debug.print(ad_K0) -> {x}", x=ad_K0)
+        U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
         
                    
-    #     _, adf = vjp( self.do_forward, pk0, U0)
-    #     ad_K = adf( (ad_K0, ad_U0) )[0]
-    #     return jnp.real(ad_K)
+        _, adf = vjp( self.do_forward, pk0, U0)
+        ad_K = adf( (ad_K0, ad_U0) )[0]
+        return jnp.real(ad_K)

@@ -19,6 +19,9 @@ import sys
 import glob
 import os
 from optimparallel import minimize_parallel
+import cartopy.crs as ccrs
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+from matplotlib import ticker as mticker
 
 # custom imports
 from build_LS_fields import *
@@ -30,26 +33,28 @@ from tools import *
 from scores import *
 
 start = clock.time()
-##############
-# PARAMETERS #
-##############
+
+###############################################
+# PARAMETERS                                  #
+###############################################
 # //
 DASHBOARD = False   # when using dask
-N_CPU = 12          # when using joblib
+N_CPU = 12          # when using joblib, if >1 then use // code
+JAXIFY = False      # whether to use JAX or not
 
 # -> area of interest
-box= [-25, -24, 45., 46, 24000., 24010.] # bottom lat, top lat, left lon, right lon
+box= [-25, -24, 45, 46]            # left lon, right lon, bottom lat, top lat
 # -> index for spatial location. We work in 1D
-ir=4
-jr=4
+ir=4                                # lon index
+jr=4                                # lat index
 
 
-# observations : OSSE
-TRUE_WIND_STRESS = False     # whether to use Cd.U**2 or Tau
-dt = 60                     # timestep of the model (s) 
-period_obs = 86400 # s, how many second between observations
+# -> Observations : OSSE
+TRUE_WIND_STRESS = False            # whether to use Cd.U**2 or Tau
+dt = 60                             # timestep of the model (s) 
+period_obs = 86400                  # s, how many second between observations
 
-# LAYER DEFINITION
+# -> LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
 vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
@@ -57,19 +62,18 @@ vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 MINIMIZE = True
-PRINT_INFO = False          # only if PARALLEL_MINIMIZED
-save_iter = False           # save iteration during minimize
-maxiter = 100
-PARALLEL_MINIMIZED = False # there is a bug with TRUE
-N_CPU = 12
-PRINT_INFO = False
+PRINT_INFO = False                  # only if PARALLEL_MINIMIZED
+save_iter = False                   # save iteration during minimize
+maxiter = 100                       # max iteration of minimization
+PARALLEL_MINIMIZED = False          # there is a bug with TRUE
+PRINT_INFO = False                  # show info during minimization
 
 # -> ANALYSIS   
-MAP_1D_LOCATION         = False 
+MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = False      # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+ONE_LAYER_COST_MAP      = False     # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -83,11 +87,14 @@ filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-
 filesTau = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc"))
 
 # -> list of save path
-path_save_png1D = './png_1D'
-path_save_LS = './'
-path_save_interp1D = './'
+path_save_png1D = './png_1D'        # where to save pngs for 1D study
+path_save_LS = './'                 # where to save large scale file
+path_save_interp1D = './'           # where to save interpolated (on model dt) currents
 
 # END PARAMETERS #################################
+##################################################
+
+
 if TRUE_WIND_STRESS: path_save_png1D = path_save_png1D + '_Tau/'
 else: path_save_png1D = path_save_png1D + '_UU/'
     
@@ -113,7 +120,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     build_LS_files(filesH, box, path_save_LS)
     #build_LS_files(filesW,box, path_save_LS)
     #build_LS_files(filesD,box, path_save_LS)
-    dsSSH_LS = xr.open_dataset('LS_fields_SSH_'+str(box[0])+'_'+str(box[1])+'_'+str(box[2])+'_'+str(box[3])+'_'+str(box[4])+'_'+str(box[5])+'.nc')
+    dsSSH_LS = xr.open_dataset('LS_fields_SSH_'+str(box[0])+'_'+str(box[1])+'_'+str(box[2])+'_'+str(box[3])+'.nc')
     # ---------------------------
     
     ## INTERPOLATION 
@@ -187,7 +194,65 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     #
     # Where am i ?
     if MAP_1D_LOCATION:
-        print('tbd')
+        print(' * Plotting the full data set')
+        dsTau = xr.open_mfdataset(filesTau) #.sel(lon=slice(box[0],box[1]),lat=slice(box[2],box[3]))
+        dsWind = xr.open_mfdataset(filesW)
+        dsUV = xr.open_mfdataset(filesUV)
+        dsSSH = xr.open_mfdataset(filesH)
+        glon = dsTau.lon
+        glat = dsTau.lat
+        
+        TauX, TauY = dsTau['oceTAUX'],dsTau['oceTAUY']
+        U, V = dsUV['SSU'],dsUV['SSV']
+        U10m, V10m = dsWind['geo5_u10m'],dsWind['geo5_v10m']
+        SSH = dsSSH['SSH']
+        
+        proj = ccrs.PlateCarree() # ccrs.Mercator()
+        clb_or = 'horizontal'
+        lon_formatter = LongitudeFormatter()
+        lat_formatter = LatitudeFormatter()
+        Nlevel_cb = 3
+        levels_SSH = np.arange(-0.3, 0.32, 0.02)
+        ticks_label_SSH = np.arange(-0.3,0.31,0.1)
+        levels_Taux = np.arange(0.15, 0.205, 0.005)
+        ticks_label_Taux = np.arange(0.15, 0.21, 0.01)
+        levels_Tauy = np.arange(0.5, 0.565, 0.005)
+        ticks_label_Tauy = np.arange(0.5, 0.56, 0.01)
+        tick_locator = mticker.MultipleLocator
+        
+        
+        fig, ax = plt.subplots(1, 3, figsize = (12,4), subplot_kw={'projection':proj}, constrained_layout=True,dpi=dpi)
+        
+        s = ax[0].contourf(glon.values,glat.values,SSH[0].values, levels=levels_SSH, cmap='seismic', extend='both')
+        cb = plt.colorbar(s,ax=ax[0], aspect=50, pad=0.01, label='SSH (m)', orientation=clb_or,
+                          ticks=ticks_label_SSH)
+        s = ax[1].contourf(glon.values,glat.values,TauX[0].values, levels=levels_Taux, extend='both')
+        cb = plt.colorbar(s,ax=ax[1], aspect=50, pad=0.01, label=r'$\tau_x$ (m2/s2)', orientation=clb_or,
+                           ticks=ticks_label_Taux )        
+        s = ax[2].contourf(glon.values,glat.values,TauY[0].values, levels=levels_Tauy, extend='both')
+        cb = plt.colorbar(s,ax=ax[2], aspect=50, pad=0.01, label=r'$\tau_y$ (m2/s2)', orientation=clb_or,
+                          ticks=ticks_label_Tauy)
+        
+        
+        for axe in ax.flatten():
+            axe.set_xticks(np.arange(-180,180,0.1), crs=ccrs.PlateCarree())
+            axe.set_yticks(np.arange(-90,90,0.1), crs=ccrs.PlateCarree())
+            axe.xaxis.set_major_locator(mticker.MultipleLocator(0.5))
+            axe.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
+            axe.yaxis.set_major_locator(mticker.MultipleLocator(0.5))
+            axe.yaxis.set_minor_locator(mticker.MultipleLocator(0.1))
+            axe.xaxis.set_major_formatter('{x}E')
+            axe.yaxis.set_major_formatter('{x}N')
+            
+            gl = axe.gridlines(draw_labels=False, linewidth=1, color='gray', alpha=0.5, linestyle='--')
+            gl.xlocator = tick_locator(0.5)
+            gl.ylocator = tick_locator(0.5)
+            gl.xformatter = LongitudeFormatter()
+            gl.yformatter = LatitudeFormatter()
+            # axe.set_xlim([box[0],box[1]])
+            axe.set_extent(box, crs=proj)
+            axe.tick_params(which='both',bottom=True, top=True, left=True, right=True)
+    
     
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:

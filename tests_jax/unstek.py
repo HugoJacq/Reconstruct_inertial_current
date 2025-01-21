@@ -64,7 +64,7 @@ class Unstek1D:
                 else: U[ik,it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) 
         return pk, U
         
-    def do_forward(self, pk, U_ini, return_traj=False):
+    def do_forward(self, pk, return_traj=False):
         """
         Unsteady Ekman model forward model
         
@@ -72,7 +72,6 @@ class Unstek1D:
 
         INPUT:
             - pk     : list of boundaries of layer(s)
-            - U_ini     : initial array of U
             - return_traj : if True, return current as complex number
         OUTPUT:
             - array of surface current
@@ -80,7 +79,6 @@ class Unstek1D:
         Note: this function works with numpy arrays
         """ 
         U = np.zeros((self.nl,self.nt), dtype='complex')
-        U[:,0] = U_ini
         if len(pk)//2!=self.nl:
             raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
         
@@ -196,8 +194,7 @@ class Unstek1D:
             
         Note: this function works with numpy arrays
         """
-        U0 = np.zeros((self.nl), dtype='complex')
-        _, U = self.do_forward(pk, U0, return_traj=True)
+        _, U = self.do_forward(pk, return_traj=True)
             
         ad_U = np.zeros((self.nl,self.nt), dtype='complex')
         ad_U[0,:] = d[0] + 1j*d[1] 

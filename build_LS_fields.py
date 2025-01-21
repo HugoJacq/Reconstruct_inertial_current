@@ -29,7 +29,7 @@ def build_LS_files(files, box, path_save):
     name_save = path_save + 'LS_fields'
     for var in list_var:
         name_save += '_'+var
-    name_save += '_' + str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '_' + str(box[4]) + '_' + str(box[5]) + '.nc'
+    name_save += '_' + str(box[0]) + '_' + str(box[1]) + '_' + str(box[2]) + '_' + str(box[3]) + '.nc'
     if pathlib.Path(name_save).is_file():
         print(' LS file for '+str(list_var)+' is already here')
         return None       
