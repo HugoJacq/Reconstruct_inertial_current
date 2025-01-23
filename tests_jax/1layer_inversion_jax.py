@@ -23,19 +23,35 @@ jax.config.update("jax_enable_x64", True)
 #jax.config.update('jax_platform_name', 'cpu')
 print(jax.devices())
 
+"""
+Recap of findings about JAX:
+    - if possible, do Just-in-Time compilation (jit)
+    - use lax.cond and lax.select to replace if/then (or jnp.where if possible)
+    - use lax.fori_loop to replace for loops, or use lax.scan
+    - U[i,j] = 1. -> U = U.at[i,j].set(1.)
+    - NO: U[i][j] YES: U[i,j], this can affect performance of jit compiled functions
+    - For this specific problem, as the time index is quite long, lax.grad is not efficient. 
+            lax.jacfwd is the way to go instead.
+    - jit compiled function on cpu are slower than on gpu (and also slower than numpy), 
+            due to differences in the cpu version of the jit compilator.
+"""
+
+
+
+
 # initial vector_k
-vector_k = np.array([-3.,-12.]) # 1 layer
-#vector_k = np.linspace(-3,-12,4) # 2 layer
+#vector_k = np.array([-3.,-12.]) # 1 layer
+#vector_k = np.linspace(-3,-12,20) # N layer
 #pk = np.array([-3.61402696, -9.44992617]) # solution of minimization
 #pk = np.array([-3.9, -9.5]) # test near the solution
-#pk=np.array([-3.,-8.,-10.,-12.])
+vector_k=np.array([-3.,-8.,-10.,-12.])
 dt = 60 # s
 
 path_file = '../Interp_1D_LON-24.8_LAT45.2.nc'
 TRUE_WIND_STRESS = False
 period_obs = 86400 # s, how many second between observations
 
-MINIMIZE = False
+MINIMIZE = True
 save_iter = False # save iteration during minimize
 maxiter = 100
 PARALLEL_MINIMIZED = False
@@ -67,7 +83,7 @@ if False:
     print('pk',pk)
     
     # testing the functions
-    if True:
+    if False:
 
         t0 = clock.time()
         _, Ca = model.do_forward(pk)
@@ -136,7 +152,7 @@ if False:
             print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
         pk = res['x']
     
-    _, Ca = model.do_forward(pk,U_0)
+    _, Ca = model.do_forward(pk)
     Ua, Va = np.real(Ca),np.imag(Ca)
     RMSE = score_RMSE(Ua, U)     
     
@@ -177,11 +193,9 @@ if True:
     pk = jnp.asarray(vector_k)
     print('pk',pk)
         
-    
+    tbase = clock.time()
     # testing the functions
-    if True:
-        
-        tbase = clock.time()
+    if False:
         
         _, Ca = model.do_forward_jit(pk)
         #Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
@@ -193,15 +207,17 @@ if True:
         t1 = clock.time()
         print('-> time for forward model = ',np.round(t1 - t0,4) )
         
-        J = var.cost(pk)
+        J = var.cost(pk, save_iter=True)
         print('J',J)
         t2 = clock.time()
         print('-> time for J_1 (with compile) = ',np.round(t2 - t1,4) )
         
-        J = var.cost(pk)
+        J = var.cost(pk, save_iter=True)
         print('J',J)
         t3 = clock.time()
         print('-> time for J_2 = ',np.round(t3 - t2,4) )
+        
+        print(var.J)
         
         dJ = var.grad_cost(pk)
         print('dJ',dJ)
@@ -214,22 +230,48 @@ if True:
         print('-> time for dJ_2 = ',np.round(t5 - t4,4) )
         
         raise Exception
+        
+        # dCa = model.tgl(pk)
+        # dUa, dVa = np.real(dCa), np.imag(dCa)
+        # adj_K = model.adjoint(pk,(dUa,dVa))
+        # t6 = clock.time()
+        # print('-> time for adj_K (with compile) = ',np.round(t5 - t4,4) )
+        
+        # dCa = model.tgl(pk, pk)
+        # dUa, dVa = np.real(dCa), np.imag(dCa)
+        # adj_K = model.adjoint(pk,(dUa,dVa))
+        # t7 = clock.time()
+        # print('-> time for adj_K = ',np.round(t7 - t6,4) )
 
     # To do later : jax this minimization
     # maybe see: 
     #   - optimix
     #   - optax, example LBFGS
     if MINIMIZE:
-        res = opt.minimize(var.cost, pk, args=(save_iter),
-                            method='L-BFGS-B',
-                            jac=var.grad_cost,
-                            options={'disp': True, 'maxiter': maxiter})
-        if np.isnan(var.cost(res['x'])): # , Uo, Vo, Ri
+        #opt = optax.chain(var.print_info(), optax.lbfgs())
+        opt = optax.lbfgs()
+        #res, _ = var.run_opt(init_params=pk, opt=opt, max_iter=maxiter, tol=1e-3)
+        
+        res = var.my_opt_jit(pk, opt, max_iter=16)
+        
+        if np.isnan(var.cost(res)): # , Uo, Vo, Ri
             print('The model has crashed.')
         else:
-            print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
-            print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
-        pk = res['x']
+            print(' vector K solution',res)
+            print(' cost function value with K solution:',var.cost(res)) # , Uo, Vo, Ri
+        print(var.J,var.G)
+        pk = res
+        
+        # res = opt.minimize(var.cost, pk, args=(save_iter),
+        #                     method='L-BFGS-B',
+        #                     jac=var.grad_cost,
+        #                     options={'disp': True, 'maxiter': maxiter})
+        # if np.isnan(var.cost(res['x'])): # , Uo, Vo, Ri
+        #     print('The model has crashed.')
+        # else:
+        #     print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+        #     print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
+        # pk = res['x']
     
     _, Ca2 = model.do_forward_jit(pk)
     Ua2, Va2 = np.real(Ca2)[0],np.imag(Ca2)[0]
@@ -251,7 +293,7 @@ if True:
     plt.legend(loc=1)
     plt.tight_layout()
     plt.savefig('JAX_series_reconstructed_long_'+str(model.nl)+'layers.png')
-    print('-> time for with jax = ',np.round(clock.time() - t1,4) )
+    print('-> time for with jax = ',np.round(clock.time() - tbase,4) )
     
         
 plt.show()

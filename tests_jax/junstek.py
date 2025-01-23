@@ -33,6 +33,7 @@ class jUnstek1D:
         # JIT compiled functions
         self.do_forward_jit = jit(self.do_forward)
         self.K_transform_jit = jit(self.K_transform)
+        self.__one_step_jit = jit(self.__one_step)
         
     def K_transform(self, pk, order=0, function='exp'):
         """
@@ -46,7 +47,7 @@ class jUnstek1D:
             - f(k) or f'(k)
         """  
         if function=='exp':
-            return jnp.exp(pk).astype('complex')
+            return jnp.exp(pk) # .astype('complex')
         else:
             raise Exception('K_transform function '+function+' is not available, retry')
 
@@ -56,16 +57,16 @@ class jUnstek1D:
         """
         it, K, U = arg1
         ik = 0
-        U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
+        U = U.at[ik,it+1].set( U[ik, it] + self.dt*( -1j*self.fc*U[ik, it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik, it]) ) )
         return it, K, U
         
     def __Nlayer_midlayers_for_scan(self,X0,ik):
         it, K, U = X0
         U = U.at[ik,it+1].set( U[ik][it] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik][it] 
-                                    - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
-                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+                                    - 1j*self.fc*U[ik, it] 
+                                    - K[2*ik]*(U[ik, it]-U[ik-1, it]) 
+                                    - K[2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
         X = it, K, U
         return X, X
         
@@ -79,18 +80,18 @@ class jUnstek1D:
         
         # surface
         ik = 0
-        U = U.at[ik, it+1].set( U[ik][it] + 
+        U = U.at[ik, it+1].set( U[ik, it] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik][it] 
+                                    - 1j*self.fc*U[ik, it] 
                                     + K[2*ik]*self.TA[it] 
-                                    - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
+                                    - K[2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
         # bottom
         ik = -1
-        U = U.at[ik,it+1].set(  U[ik][it] + 
+        U = U.at[ik,it+1].set(  U[ik, it] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik][it] 
-                                    - K[2*ik]*(U[ik][it]-U[ik-1][it]) 
-                                    - K[2*ik+1]*U[ik][it] ) )
+                                    - 1j*self.fc*U[ik, it] 
+                                    - K[2*ik]*(U[ik, it]-U[ik-1, it]) 
+                                    - K[2*ik+1]*U[ik, it] ) )
         # in between
         X0 = it, K, U
         final, result = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
@@ -118,7 +119,9 @@ class jUnstek1D:
                             self.__Onelayer,    # if 1 layer, ik=0
                             self.__Nlayer,      # else, loop on layers
                             arg1)   
-
+           
+        # faire un ouput avec 1 valeur tous les jours.   
+            
         # old, work but slow (same as no jax version)
         # performance is comparable to not using __Nlayer because there is a few layers
         # forward model is on par with no jax (~0.5s) but gradient is much slower (~5s)
@@ -159,9 +162,7 @@ class jUnstek1D:
         arg0 = pk, U
         X0 = pk, U
         with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            _, U = lax.fori_loop(1,self.nt,self.__one_step,arg0)
-            # X, _ = lax.   scan(jit(self.__one_step_for_scan), X0, jnp.arange(1,self.nt) )
-            # _, U = X
+            _, U = lax.fori_loop(0,self.nt,self.__one_step_jit,arg0)
             
         self.Ur_traj = U
         self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
@@ -176,6 +177,12 @@ class jUnstek1D:
     #     dK0 = self.K_transform(k0, order=1)*dk0
     #     _, (dK,dU) = jvp(self.do_forward_jit, (K0, U0), (dK0, dU0) )
     #     return dK,dU
+    
+    def tgl(self, k0):
+        U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+        dU0 = jnp.zeros((self.nl,self.nt), dtype='complex')
+        _, dU = jvp(partial(self.do_forward_jit, pk=k0), (U0,), (dU0,) )
+        return dU
 
     def adjoint(self, pk0, d):
         """

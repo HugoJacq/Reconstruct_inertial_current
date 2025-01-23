@@ -6,6 +6,14 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit,grad,lax
 from functools import partial
+import optax
+import optax.tree_utils as otu
+from typing import NamedTuple
+import chex
+import time as clock
+
+class InfoState(NamedTuple):
+    iter_num: chex.Numeric
 
 class Variational:
     """
@@ -24,8 +32,12 @@ class Variational:
         # JAX
         self.jax_grad_cost_jit = jit(self.jax_grad_cost)
         self.jax_cost_jit = jit(self.jax_cost)
-  
-    
+        
+        self.run_opt_jit = jit(self.run_opt)   
+        self.step_jit = jit(self.step)
+        
+        self.my_opt_jit = jit(self.my_opt)
+
   
     def nojax_cost(self, pk):
         """
@@ -88,7 +100,7 @@ class Variational:
         Note: this function works with numpy arrays
         """
         
-        _, C = self.model.do_forward_jit(pk) # 
+        _, C = self.model.do_forward(pk) # _, C = self.model.do_forward_jit(pk)
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
         
@@ -107,19 +119,20 @@ class Variational:
         """
         Using grad from JAX
         """
-        return grad(self.jax_cost_jit)(pk)
+        #return grad(self.jax_cost_jit)(pk) # this is much slower than jax.jacfwd
+        return jax.jacfwd(self.jax_cost_jit)(pk) # this is much faster than jax.grad
         #return jnp.real( grad(self.jax_cost_jit)(pk) )        
             
     
 
     def cost(self, pk, save_iter=False):
         if self.inJax:
-            J = self.jax_cost_jit(pk) #
+            J = self.jax_cost_jit(pk)
         else:
             J = self.nojax_cost(pk)
         if save_iter:
             self.J.append(J)
-        return float(J)   
+        return J.astype(float)   
     
     def grad_cost(self, pk, save_iter=False):
         if self.inJax:
@@ -131,4 +144,84 @@ class Variational:
             G =  self.nojax_grad_cost(pk)
         if save_iter:
             self.G.append(G)
-        return np.array(G)
+        return G.astype(float)   
+    
+    
+    
+    # minimization with jax
+    def print_info(self):
+        def init_fn(params):
+            del params
+            return InfoState(iter_num=0)
+
+        def update_fn(updates, state, params, *, value, grad, **extra_args):
+            del params, extra_args
+
+            jax.debug.print(
+                'Iteration: {i}, Value: {v}, Gradient norm: {e}',
+                i=state.iter_num,
+                v=value,
+                e=otu.tree_l2_norm(grad),
+            )
+            return updates, InfoState(iter_num=state.iter_num + 1)
+
+        return optax.GradientTransformationExtraArgs(init_fn, update_fn)
+
+
+    
+        
+    def my_opt(self, X0, opt, max_iter):
+        
+        def step_my_opt(self, carry):
+            """
+            """
+            X0, solver_state = carry
+            value = self.jax_cost(X0)
+            grad = self.jax_grad_cost(X0)
+            #value, grad = value_and_grad_fun(X0) # , state=opt_state
+            updates, opt_state = opt.update(grad, opt_state, X0, value=value, grad=grad, value_fn=self.jax_cost)
+            X0 = optax.apply_updates(X0, updates)
+            return X0, opt_state
+        
+        opt_state = opt.init(X0)
+        #value_and_grad_fun = lambda params: (fn(params),(grad_fn(params)))
+        carry = X0, opt_state
+        X0, _ = lax.fori_loop(0, max_iter, step_my_opt, carry)
+        
+        # for _ in range(max_iter):
+        #     value = fn(X0)
+        #     grad = grad_fn(X0)
+        #     #value, grad = value_and_grad_fun(X0) # , state=opt_state
+        #     updates, opt_state = solver.update(grad, opt_state, X0, value=value, grad=grad, value_fn=fn)
+        #     X0 = optax.apply_updates(X0, updates)
+        return X0
+    
+    
+    
+    
+    def step(self, carry):
+            value_and_grad_fun = lambda pk: (self.jax_cost_jit(pk),(self.jax_grad_cost_jit(pk))) # , save_iter=True
+            params, state, opt = carry
+            value, grad = value_and_grad_fun(params) #, state=state
+            updates, state = opt.update(
+                grad, state, params, value=value, grad=grad, value_fn=self.jax_cost_jit
+            )
+            params = optax.apply_updates(params, updates)
+            return params, state, opt
+            
+    def run_opt(self, init_params, opt, max_iter, tol):
+        #value_and_grad_fun = optax.value_and_grad_from_state(fun)
+        
+    
+        def continuing_criterion(carry):
+            _, state = carry
+            iter_num = otu.tree_get(state, 'count')
+            grad = otu.tree_get(state, 'grad')
+            err = otu.tree_l2_norm(grad)
+            return (iter_num == 0) | ((iter_num < max_iter) & (err >= tol))
+
+        init_carry = (init_params, opt.init(init_params), opt)
+        final_params, final_state = jax.lax.while_loop(
+            continuing_criterion, self.step_jit, init_carry
+        )
+        return final_params, final_state

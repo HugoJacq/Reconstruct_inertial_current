@@ -57,8 +57,8 @@ period_obs = 86400                  # s, how many second between observations
 # -> LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
-#vector_k=np.array([-3,-8,-10,-12])    # 2 layers
+#vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
+vector_k=np.array([-3,-8,-10,-12])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 MINIMIZE = True
@@ -74,6 +74,7 @@ MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
+LINK_K_AND_PHYSIC       = True     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -252,8 +253,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             # axe.set_xlim([box[0],box[1]])
             axe.set_extent(box, crs=proj)
             axe.tick_params(which='both',bottom=True, top=True, left=True, right=True)
-    
-    
+       
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         print('* Minimization with '+str(Nl)+' layers')
@@ -542,6 +542,72 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         plt.savefig(path_save_png1D+'k1k2_J_2layer.png')
 
     
+    if LINK_K_AND_PHYSIC:
+        """
+        BC:
+            z = 0: Tau = TAx
+            z = MLD: Uageo = 0
+
+        There is a transormation between vector K and actual coefficient.
+        K = exp(vector_k)
+        K = [A0, ..., An]
+        
+        vertical stress is parametrized as Kz.dU/dz
+        
+        Hi is the thickness of layer i
+        
+        Discretisation (finite differences) is:
+            Mid layers when N >= 3 : Central 
+            Boundaries (and so also when N<=2): upward of backward
+                if needed, ghost point
+        
+        1 layer: 
+            A0 = 1 / (H)
+            A1 = A0*Kz1 / H
+            
+            H = 1/ (A0)
+            Kz0 = A1*h/A0
+            
+        2 layers:
+            A0 = 1/(H1)
+            A1 = Kz0 / (H1) * 2/(H1+H2) = A0.2/(H1+H2)
+            A2 = Kz1 / .H2**2)
+            A3 = Kz1 / .H2) * 2/(H1+H2) = A2.2/(H1+H2)        
+            
+            H1 = 1/A[0]
+            H2 = H1*1/(A[2]/A[3]-1)
+            Kz1 = A[1]/(2*A[0])*(H1+H2)
+            Kz2 = A[2]*H2**2
+        
+        """
+    
+        # 1 layer
+        pk = [-3.61402696, -9.44992617]
+        K = np.exp(pk)
+
+        H = 1/ (K[0])
+        Kz0 = K[1]*H**2
+        print(' -> 1 layer')
+        print('     MLD=',H,'m')
+        print('     K=',Kz0,'m2/s')     
+        
+        # 2 layers
+        pk = [-3.45553431 , -9.10956862, -11.36951323, -12.49796094]
+        K = np.exp(pk)
+        H1 = 1/(K[0])
+        H2 = H1*1/(K[2]/K[3]-1)
+        Kz1 = K[1]/(2*K[0])*(H1+H2)
+        Kz2 = K[2]  *H2**2
+        
+        print(' -> 2 layers')
+        print('     H1',H1,'m')
+        print('     H2',H2,'m')
+        print('     MLD=',H1+H2,'m')
+        print('     K1=',Kz1,'m2/s')
+        print('     K2=',Kz2,'m2/s')
+        
+        
+        
     
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')
