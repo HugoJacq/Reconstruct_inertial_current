@@ -153,6 +153,7 @@ class jUnstek1D:
             - The use of 'lax.fori_loop' on layer loop has close execution time with not using it, 
                 because there is only a few layers
         """ 
+        #jax.debug.print('pk = {}',pk)
         if len(pk)//2!=self.nl:
             raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 

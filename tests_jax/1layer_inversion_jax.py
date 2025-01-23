@@ -12,6 +12,8 @@ from junstek import *
 from forcing import *
 from observations import *
 from inv import *
+from inv import value_and_grad_jvp
+
 
 import jax
 import jax.numpy as jnp
@@ -40,10 +42,10 @@ Recap of findings about JAX:
 
 
 # initial vector_k
-#vector_k = np.array([-3.,-12.]) # 1 layer
+vector_k = np.array([-3.,-12.]) # 1 layer
 #vector_k = np.linspace(-3,-12,20) # N layer
 #pk = np.array([-3.61402696, -9.44992617]) # solution of minimization
-#pk = np.array([-3.9, -9.5]) # test near the solution
+#vector_k = np.array([-3.9, -9.5]) # test near the solution
 vector_k=np.array([-3.,-8.,-10.,-12.])
 dt = 60 # s
 
@@ -160,7 +162,7 @@ if False:
     title = ''
     for k in range(len(pk)):
         title += 'k'+str(k)+','   
-    title = title[:-1]+' = '+str(pk) + ' ('+str(np.round(RMSE,3))+')'
+    title = title[:-1]+' = '+str(pk) #+ ' ('+str(np.round(RMSE,3))+')'
     
     plt.figure(figsize=(10,3),dpi=dpi)
     plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
@@ -184,8 +186,6 @@ DEBUGING:
 - print() for static values, such as dtypes and array shapes
 """
 if True:   
-    
-    
     model = jUnstek1D(Nl, forcing, observations)
     var = Variational(model, observations)
     U_0 = jnp.zeros((model.nl), dtype='complex')
@@ -197,70 +197,78 @@ if True:
     # testing the functions
     if False:
         
-        _, Ca = model.do_forward_jit(pk)
-        #Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
-        t0 = clock.time()
-        print('-> time for forward model (with compile) = ',np.round(t0 - tbase,4) )
+        # _, Ca = model.do_forward_jit(pk)
+        # #Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
+        # t0 = clock.time()
+        # print('-> time for forward model (with compile) = ',np.round(t0 - tbase,4) )
         
-        _, Ca = model.do_forward_jit(pk)
-        #Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
-        t1 = clock.time()
-        print('-> time for forward model = ',np.round(t1 - t0,4) )
+        # _, Ca = model.do_forward_jit(pk)
+        # #Ua2, Va2 = jnp.real(Ca)[0], jnp.imag(Ca)[0]
+        # t1 = clock.time()
+        # print('-> time for forward model = ',np.round(t1 - t0,4) )
         
-        J = var.cost(pk, save_iter=True)
-        print('J',J)
-        t2 = clock.time()
-        print('-> time for J_1 (with compile) = ',np.round(t2 - t1,4) )
+        # J = var.cost(pk, save_iter=True)
+        # print('J',J)
+        # t2 = clock.time()
+        # print('-> time for J_1 (with compile) = ',np.round(t2 - t1,4) )
         
-        J = var.cost(pk, save_iter=True)
-        print('J',J)
-        t3 = clock.time()
-        print('-> time for J_2 = ',np.round(t3 - t2,4) )
+        # J = var.cost(pk, save_iter=True)
+        # print('J',J)
+        # t3 = clock.time()
+        # print('-> time for J_2 = ',np.round(t3 - t2,4) )
         
-        print(var.J)
+        # print(var.J)
         
-        dJ = var.grad_cost(pk)
-        print('dJ',dJ)
-        t4 = clock.time()
-        print('-> time for dJ_1 (with compile) = ',np.round(t4 - t3,4) )
+        # dJ = var.grad_cost(pk)
+        # print('dJ',dJ)
+        # t4 = clock.time()
+        # print('-> time for dJ_1 (with compile) = ',np.round(t4 - t3,4) )
         
-        dJ = var.grad_cost(pk)
-        print('dJ',dJ)
-        t5 = clock.time()
-        print('-> time for dJ_2 = ',np.round(t5 - t4,4) )
+        # dJ = var.grad_cost(pk)
+        # print('dJ',dJ)
+        # t5 = clock.time()
+        # print('-> time for dJ_2 = ',np.round(t5 - t4,4) )
+        
+        t6 = clock.time()
+        J, dJ = value_and_grad_jvp_jit(var.jax_cost)(pk)
+        print(J, dJ)
+        t7 = clock.time()
+        print('time value_and_grad_jvp (with compile),', np.round( t7-t6,2))
+        
+        t8 = clock.time()
+        J, dJ = value_and_grad_jvp_jit(var.jax_cost)(pk)
+        print(J, dJ)
+        t9 = clock.time()
+        print('time value_and_grad_jvp ,', np.round( t9-t7,2))
         
         raise Exception
-        
-        # dCa = model.tgl(pk)
-        # dUa, dVa = np.real(dCa), np.imag(dCa)
-        # adj_K = model.adjoint(pk,(dUa,dVa))
-        # t6 = clock.time()
-        # print('-> time for adj_K (with compile) = ',np.round(t5 - t4,4) )
-        
-        # dCa = model.tgl(pk, pk)
-        # dUa, dVa = np.real(dCa), np.imag(dCa)
-        # adj_K = model.adjoint(pk,(dUa,dVa))
-        # t7 = clock.time()
-        # print('-> time for adj_K = ',np.round(t7 - t6,4) )
+
 
     # To do later : jax this minimization
     # maybe see: 
     #   - optimix
     #   - optax, example LBFGS
     if MINIMIZE:
-        #opt = optax.chain(var.print_info(), optax.lbfgs())
-        opt = optax.lbfgs()
-        #res, _ = var.run_opt(init_params=pk, opt=opt, max_iter=maxiter, tol=1e-3)
-        
-        res = var.my_opt_jit(pk, opt, max_iter=16)
-        
-        if np.isnan(var.cost(res)): # , Uo, Vo, Ri
+
+        if False:
+            # minimize with jax, x3 longer, to be tuned
+            opt = optax.lbfgs()
+            pk = var.jaxopt_opt(var.jax_cost, init_params=pk, max_iter=maxiter, tol=1e-3)
+        if True:
+            # minimize with scipy
+            res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
+            pk = res['x']
+            
+            
+        if np.isnan(var.cost(pk)): # , Uo, Vo, Ri
             print('The model has crashed.')
         else:
-            print(' vector K solution',res)
-            print(' cost function value with K solution:',var.cost(res)) # , Uo, Vo, Ri
+            print(' vector K solution',pk)
+            print(' cost function value with K solution:',var.cost(pk)) # , Uo, Vo, Ri
         print(var.J,var.G)
-        pk = res
         
         # res = opt.minimize(var.cost, pk, args=(save_iter),
         #                     method='L-BFGS-B',

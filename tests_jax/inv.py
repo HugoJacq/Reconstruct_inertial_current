@@ -11,9 +11,23 @@ import optax.tree_utils as otu
 from typing import NamedTuple
 import chex
 import time as clock
+import jaxopt
+
+
+
+def value_and_grad_jvp(f):   
+    return lambda x: ( f(x), jax.jacfwd(f)(x) )
+    #return lambda x:  jnp.diagonal( jax.jvp(f, (x,), (jnp.ones(( len(x),len(x) )), ) ) )
+def grad_jvp(f):
+    return lambda x: value_and_grad_jvp(f)(x)[1]
+
+def value_and_grad_jvp_jit(f):   
+    return jit(lambda x: ( f(x), jax.jacfwd(f)(x) ))
 
 class InfoState(NamedTuple):
     iter_num: chex.Numeric
+
+
 
 class Variational:
     """
@@ -33,10 +47,9 @@ class Variational:
         self.jax_grad_cost_jit = jit(self.jax_grad_cost)
         self.jax_cost_jit = jit(self.jax_cost)
         
-        self.run_opt_jit = jit(self.run_opt)   
-        self.step_jit = jit(self.step)
+        #self.run_opt_jit = jit(self.run_opt)   
         
-        self.my_opt_jit = jit(self.my_opt)
+        #self.my_opt_jit = jit(self.my_opt)
 
   
     def nojax_cost(self, pk):
@@ -113,6 +126,7 @@ class Variational:
         # TO DO: 
         # here use lax.cond 
         # to detect if nan like 'nojax_grad_cost'
+        #jax.debug.print('inside minimize J = {}', J)
         return J
  
     def jax_grad_cost(self, pk):        
@@ -166,12 +180,11 @@ class Variational:
             return updates, InfoState(iter_num=state.iter_num + 1)
 
         return optax.GradientTransformationExtraArgs(init_fn, update_fn)
-
-
     
+
         
     def my_opt(self, X0, opt, max_iter):
-        
+        # trying to do my own minimizer, not working for now
         def step_my_opt(self, carry):
             """
             """
@@ -196,23 +209,21 @@ class Variational:
         #     X0 = optax.apply_updates(X0, updates)
         return X0
     
-    
-    
-    
-    def step(self, carry):
-            value_and_grad_fun = lambda pk: (self.jax_cost_jit(pk),(self.jax_grad_cost_jit(pk))) # , save_iter=True
-            params, state, opt = carry
-            value, grad = value_and_grad_fun(params) #, state=state
+       
+    def run_opt(fun, init_params, opt, max_iter, tol):
+        # comes from optax example
+
+        value_and_grad_fun = value_and_grad_jvp_jit(fun)
+        def step(carry):
+            params, state = carry
+            value, grad = value_and_grad_fun(params) # , state=state
+            jax.debug.print('value, grad, {}, {}',value,grad)
             updates, state = opt.update(
-                grad, state, params, value=value, grad=grad, value_fn=self.jax_cost_jit
+                grad, state, params, value=value, grad=grad, value_fn=fun
             )
             params = optax.apply_updates(params, updates)
-            return params, state, opt
-            
-    def run_opt(self, init_params, opt, max_iter, tol):
-        #value_and_grad_fun = optax.value_and_grad_from_state(fun)
-        
-    
+            return params, state
+
         def continuing_criterion(carry):
             _, state = carry
             iter_num = otu.tree_get(state, 'count')
@@ -220,8 +231,22 @@ class Variational:
             err = otu.tree_l2_norm(grad)
             return (iter_num == 0) | ((iter_num < max_iter) & (err >= tol))
 
-        init_carry = (init_params, opt.init(init_params), opt)
+        init_carry = (init_params, opt.init(init_params))
         final_params, final_state = jax.lax.while_loop(
-            continuing_criterion, self.step_jit, init_carry
+            continuing_criterion, step, init_carry
         )
         return final_params, final_state
+
+  
+    def jaxopt_opt(self, fun, init_params, max_iter, tol):
+        # this is not faster than scipy optimize.
+        # I need to better tune this
+        
+        value_and_grad_fun = value_and_grad_jvp_jit(fun)
+       
+        opt = jaxopt.LBFGS(value_and_grad_fun, value_and_grad=True, maxiter=max_iter, jit=True,
+                           verbose=False, linesearch='zoom',tol=1e-8, stop_if_linesearch_fails=True,linesearch_init='current') # ,tol=tol, jit=False, linesearch_init='current'
+        
+        res,_ = opt.run(init_params)
+        
+        return res
