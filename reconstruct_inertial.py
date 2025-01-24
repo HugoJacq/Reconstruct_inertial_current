@@ -50,6 +50,7 @@ jr=4                                # lat index
 point_loc = [-24.8,45.2]
 
 # -> Observations : OSSE
+SOURCE = 'MITgcm'
 TRUE_WIND_STRESS = False            # whether to use Cd.U**2 or Tau
 dt = 60                             # timestep of the model (s) 
 period_obs = 86400                  # s, how many second between observations
@@ -81,11 +82,22 @@ LINK_K_AND_PHYSIC       = True     # link the falues of vector K with physical v
 dpi=200
 
 # -> List of files
-filesUV = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc"))
-filesH = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc"))
-filesW = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc"))
-filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc"))
-filesTau = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc"))
+files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
+                        'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
+                        'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
+                        'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
+                        'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
+                        },
+            }
+
+
+
+
+# filesUV = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc"))
+# filesH = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc"))
+# filesW = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc"))
+# filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc"))
+# filesTau = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc"))
 
 # -> list of save path
 path_save_png1D = './png_1D'        # where to save pngs for 1D study
@@ -95,6 +107,14 @@ path_save_interp1D = './'           # where to save interpolated (on model dt) c
 # END PARAMETERS #################################
 ##################################################
 
+
+files_dict['MITgcm']['filesALL'] = ( list(files_dict['MITgcm']['filesUV']) + 
+                                    list(files_dict['MITgcm']['filesH']) + 
+                                    list(files_dict['MITgcm']['filesW']) + 
+                                    list(files_dict['MITgcm']['filesD']) + 
+                                    list(files_dict['MITgcm']['filesTau']) )
+
+files_list_all = files_dict[SOURCE]['filesALL']
 
 if TRUE_WIND_STRESS: path_save_png1D = path_save_png1D + '_Tau/'
 else: path_save_png1D = path_save_png1D + '_UU/'
@@ -119,8 +139,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
     print('* Interpolation on unsteady ekman model timestep')
-    list_files = list(filesUV) + list(filesH) + list(filesW) + list(filesD) + list(filesTau)
-    interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save_interp1D)
+    interp_at_model_t_1D(files_list_all, dt, point_loc, N_CPU, path_save_interp1D)
     
     
     # observation and forcing
@@ -188,17 +207,18 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     # Where am i ?
     if MAP_1D_LOCATION:
         print(' * Plotting the full data set')
-        dsTau = xr.open_mfdataset(filesTau) #.sel(lon=slice(box[0],box[1]),lat=slice(box[2],box[3]))
-        dsWind = xr.open_mfdataset(filesW)
-        dsUV = xr.open_mfdataset(filesUV)
-        dsSSH = xr.open_mfdataset(filesH)
-        glon = dsTau.lon
-        glat = dsTau.lat
+        # dsTau = xr.open_mfdataset(filesTau) #.sel(lon=slice(box[0],box[1]),lat=slice(box[2],box[3]))
+        # dsWind = xr.open_mfdataset(filesW)
+        # dsUV = xr.open_mfdataset(filesUV)
+        # dsSSH = xr.open_mfdataset(filesH)
+        ds = xr.open_mfdataset(files_list_all)
+        glon = ds.lon
+        glat = ds.lat
         
-        TauX, TauY = dsTau['oceTAUX'],dsTau['oceTAUY']
-        U, V = dsUV['SSU'],dsUV['SSV']
-        U10m, V10m = dsWind['geo5_u10m'],dsWind['geo5_v10m']
-        SSH = dsSSH['SSH']
+        TauX, TauY = ds['oceTAUX'],ds['oceTAUY']
+        U, V = ds['SSU'],ds['SSV']
+        U10m, V10m = ds['geo5_u10m'],ds['geo5_v10m']
+        SSH = ds['SSH']
         
         proj = ccrs.PlateCarree() # ccrs.Mercator()
         clb_or = 'horizontal'
