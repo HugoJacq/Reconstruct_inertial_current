@@ -6,6 +6,8 @@ import pathlib
 from datetime import timedelta
 
 from filters import *
+from tools import *
+
 def build_LS_files(files, box, path_save):
     """
     Builds a netcdf file with smooth variable to get large scale fields.
@@ -17,6 +19,8 @@ def build_LS_files(files, box, path_save):
         - path_save: where to save the netcdf file
     OUPUT:
         - a netcdf file with time and space smoothing, for currents, SSH, MLD
+        
+    OLD FUNCTION, NOT USED ANYMORE
     """
     N_CPU = 1
     
@@ -105,8 +109,9 @@ def build_LS_files(files, box, path_save):
                                     'units':'m s-1',})
     
 
-    
-    
+    # ds2 = xr.open_dataset('Interp_1D_LON-24.8_LAT45.2.nc')
+    # print('Ug are equal ?:',np.array_equal(ds2['Ug'],gUg))
+    # raise Exception
     coords=ds.coords
     ds_LS = xr.Dataset(data_vars=data_vars,coords=coords,
                         attrs={'input_files':files,'box':str(box),'file_created_by':'build_LS_files'})            
@@ -116,60 +121,84 @@ def build_LS_files(files, box, path_save):
     ds_LS.to_netcdf(path=name_save,mode='w')
     ds_LS.close()
     
-def interp_at_model_t_1D(dsUg, dt, ir, jr, list_files, box, path_save, method='linear'):
+def interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save, method='linear'):
     """
+    Source model is : MITgcm or Crocco
+    
     Builds a netcdf file with variable interpolated at the timestep dt.
         initial file is global, we create a subset defined by 'box'
 
     INPUT:
-        - dsUg: dataset with geostrophic currents, on the same grid as in 'files'
+        - list_files: list of path for the files [filesUV,filesH,filesW,filesD]
         - dt : time step to interpolate at
-        - list_files: list of path for 1 variable [filesUV,filesH,filesW,filesD]
-        - box: list of lat lon boundaries [left,right,bottom,top]
+        - point_loc : tuple of [lon,lat] where to work
+        - N_CPU: do the spatial filter in // if > 1
         - path_save: where to save the netcdf file
         - method : interpolation method
     OUPUT:
         - a netcdf file with time interpolated at ['ir','jr'], for 
           currents, SSH, MLD. Stress is added as C.U10**2
     """   
-    
-    # opening datasets
-    ds = xr.open_mfdataset(list_files)
-    gUg = dsUg.Ug
-    gVg = dsUg.Vg
-  
-    # searching for lon,lat indexes
-    glon = ds.lon
-    glat = ds.lat
-    ix = np.where((glon>=box[0])&(glon<=box[1]))[0]
-    iy = np.where((glat>=box[2])&(glat<=box[3]))[0]
-    glon = glon[ix[0]:ix[-1]+1]
-    glat = glat[iy[0]:iy[-1]+1]
-    
-    # selecting data in lat lon
-    ds = ds.isel(lat=slice(iy[0],iy[-1]+1),lon=slice(ix[0],ix[-1]+1))
-    ds = ds.isel(lon=ir,lat=jr)
-    print('     location is:',ds.lon.values,ds.lat.values)
-    LON = ds.lon.values
-    LAT = ds.lat.values
-    
     # checking if file is present
     name_save = path_save
-    name_save += 'Interp_1D_LON'+str(LON)+'_LAT'+str(LAT)+'.nc'
+    name_save += 'Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
     if pathlib.Path(name_save).is_file():
         print('     interpolated file 1D is already here')
         return None
     
-    # removing geostrophy
-    ds['SSU'].data = ds['SSU'].values - gUg[:,jr,ir].values
-    ds['SSV'].data = ds['SSV'].values - gVg[:,jr,ir].values
+    # opening datasets
+    ds = xr.open_mfdataset(list_files)
+    nt = len(ds.time)
+    
+    # getting a reduced size area to compute large scale current
+    # Area is +- 1° around 'point_loc'
+    ds = ds.sel(lon=slice(point_loc[0]-1,point_loc[0]+1),
+                lat=slice(point_loc[1]-1,point_loc[1]+1) )
+    
+    # large scale filtering of SSH
+    sigmax, sigmay = 3, 3
+    ds['SSH'] = xr.where(ds['SSH']>1e5,np.nan,ds['SSH'])
+    gSSH_LS0 = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, nt, N_CPU, ns=2)
+    gSSH_LS = mytimefilter(gSSH_LS0)  
+    
+    # getting geo current from SSH
+    glon2,glat2 = np.meshgrid(ds.lon.values,ds.lat.values)
+    fc = 2*2*np.pi/86164*np.sin(glat2*np.pi/180)
+    dlon = (ds.lon[1]-ds.lon[0]).values
+    dlat = (ds.lat[1]-ds.lat[0]).values
+    gUg = gSSH_LS*0.
+    gVg = gSSH_LS*0.
+    for it in range(nt):
+        gVg[it,:,1:-1] =  grav/fc[:,1:-1]*( gSSH_LS[it,:,2:]-gSSH_LS[it,:,:-2] ) / ( dlon*110000*np.cos(glat2[:,1:-1]*np.pi/180))/2
+        gUg[it,1:-1,:] = -grav/fc[1:-1,:]*( gSSH_LS[it,2:,:]-gSSH_LS[it,:-2,:] ) / ( dlat*110000)/2
+    gUg[:,0,:] = gUg[:,1,:]
+    gUg[:,-1,:]= gUg[:,-2,:]
+    gVg[:,:,0] = gVg[:,:,1]
+    gVg[:,:,-1]= gVg[:,:,-2]
+     
+    ds['Ug'] = (ds['SSU'].dims,
+                        gUg,
+                        {'standard_name':'zonal_geostrophic_current',
+                            'long_name':'zonal geostrophic current from SSH',
+                            'units':'m s-1',})
+    ds['Vg'] = (ds['SSU'].dims,
+                        gVg,
+                        {'standard_name':'meridional_geostrophic_current',
+                            'long_name':'meridional geostrophic current from SSH',
+                            'units':'m s-1',}) 
+     
+    # selecting the location in 1D (time)
+    ds = ds.sel(lon=point_loc[0],lat=point_loc[1])
+    LON = ds.lon.values # scalar
+    LAT = ds.lat.values # scalar
 
+    # removing geostrophy
+    ds['SSU'].data = ds['SSU'].values - ds['Ug'].values
+    ds['SSV'].data = ds['SSV'].values - ds['Vg'].values
+    
     # new time vector
-    if False:
-        time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
-        ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
-    if True:
-        print('toto')
+    time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
+    ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
         
     # stress as: C x wind**2
     gTx = ds_i.geo5_u10m

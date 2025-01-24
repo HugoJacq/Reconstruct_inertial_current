@@ -132,3 +132,10 @@ def score_RMSE(U,Ut):
     """
     nt = len(U)
     return np.sqrt( np.sum( (U-Ut)**2 )/ nt )
+
+def nearest(array,value):
+	"""
+	Array is 1D
+	value is 0D
+	"""
+	return np.argmin(np.abs(array-value))	

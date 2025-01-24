@@ -84,3 +84,7 @@ __pycache__/filters.cpython-311.pyc
 __pycache__/scores.cpython-311.pyc
 tests_jax/__pycache__/tools.cpython-311.pyc
 png_1D_UU/series_reconstructed_long_2layers_withMLD.png
+build_LS_fields.pySAVE24012025
+ncdiff_log.txt
+reconstruct_inertial.pySAVE24012025
+V1_Interp_1D_LON-24.8_LAT45.2.nc

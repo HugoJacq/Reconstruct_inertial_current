@@ -47,7 +47,7 @@ box= [-25, -24, 45, 46]            # left lon, right lon, bottom lat, top lat
 # -> index for spatial location. We work in 1D
 ir=4                                # lon index
 jr=4                                # lat index
-
+point_loc = [-24.8,45.2]
 
 # -> Observations : OSSE
 TRUE_WIND_STRESS = False            # whether to use Cd.U**2 or Tau
@@ -115,21 +115,13 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
     
-    # LARGE SCALE FIELDS --------
-    print('* Getting large scale motion ...')
-    #build_LS_files(filesUV,box, path_save_LS)
-    build_LS_files(filesH, box, path_save_LS)
-    #build_LS_files(filesW,box, path_save_LS)
-    #build_LS_files(filesD,box, path_save_LS)
-    dsSSH_LS = xr.open_dataset('LS_fields_SSH_'+str(box[0])+'_'+str(box[1])+'_'+str(box[2])+'_'+str(box[3])+'.nc')
-    # ---------------------------
-    
     ## INTERPOLATION 
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
-    print('* interpolation on unsteady ekman model timestep')
+    print('* Interpolation on unsteady ekman model timestep')
     list_files = list(filesUV) + list(filesH) + list(filesW) + list(filesD) + list(filesTau)
-    interp_at_model_t_1D(dsSSH_LS, dt, ir, jr, list_files, box, path_save_interp1D)
+    interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save_interp1D)
+    
     
     # observation and forcing
     path_file = 'Interp_1D_LON-24.8_LAT45.2.nc'
