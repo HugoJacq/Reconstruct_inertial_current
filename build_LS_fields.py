@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 import xarray as xr
+from xgcm import Grid as xGrid
 from constants import *
 import pathlib
 from datetime import timedelta
@@ -120,8 +121,41 @@ from tools import *
     
 #     ds_LS.to_netcdf(path=name_save,mode='w')
 #     ds_LS.close()
+ 
+class Model_source_OSSE:
+    def __init__(self, SOURCE, liste_all_files):
+        self.source = SOURCE
+        self.dataset = xr.open_mfdataset(liste_all_files)
     
-def interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save, method='linear'):
+        if SOURCE=='MITgcm':
+            self.nameLon_u = 'lon'
+            self.nameLon_v = 'lon'
+            self.nameLon_rho = 'lon'
+            self.nameLat_u = 'lat'
+            self.nameLat_v = 'lat'
+            self.nameLat_rho = 'lat'
+            self.nameSSH = 'SSH'
+            self.nameU = 'SSU'
+            self.nameV = 'SSV'
+            self.nameTime = 'time'
+        elif SOURCE=='CROCCO':
+            self.nameLon_u = 'nav_lon_u'
+            self.nameLon_v = 'nav_lon_v'
+            self.nameLon_rho = 'nav_lon_rho'
+            self.nameLat_u = 'nav_lat_u'
+            self.nameLat_v = 'nav_lat_v'
+            self.nameLat_rho = 'nav_lat_rho'
+            self.nameSSH = 'zeta'
+            self.nameU = 'u'
+            self.nameV = 'v'
+            self.nameTime = 'time_instant'
+    def get_name_dim(self):
+        return ( self.nameLon_u, self.nameLon_v, self.nameLon_rho,
+                self.nameLat_u, self.nameLat_v, self.nameLat_rho,
+                self.nameSSH, self.nameU, self.nameV, self.nameTime )
+        
+   
+def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='linear'):
     """
     Source model is : MITgcm or Crocco
     
@@ -129,7 +163,7 @@ def interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save, method='li
         initial file is global, we create a subset defined by 'box'
 
     INPUT:
-        - list_files: list of path for the files [filesUV,filesH,filesW,filesD]
+        - model_source: object of class Model_source_OSSE (dataset and name of coords)
         - dt : time step to interpolate at
         - point_loc : tuple of [lon,lat] where to work
         - N_CPU: do the spatial filter in // if > 1
@@ -138,34 +172,56 @@ def interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save, method='li
     OUPUT:
         - a netcdf file with time interpolated at ['ir','jr'], for 
           currents, SSH, MLD. Stress is added as C.U10**2
+          
+    TBD: add Crocco source support
     """   
     # checking if file is present
     name_save = path_save
-    name_save += 'Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
+    name_save += model_source.source + '_Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
+        
     if pathlib.Path(name_save).is_file():
         print('     interpolated file 1D is already here')
         return None
     
+    
+    
+    # name of variable are different with SOURCE
+    (nameLon_u, nameLon_v, nameLon_rho,
+     nameLat_u, nameLat_v, nameLat_rho, 
+     nameSSH, nameU, nameV, nameTime)= model_source.get_name_dim()
+    
     # opening datasets
-    ds = xr.open_mfdataset(list_files)
-    nt = len(ds.time)
+    ds = model_source.dataset
+    nt = len(ds[nameTime])
     
     # getting a reduced size area to compute large scale current
     # Area is +- 1° around 'point_loc'
-    ds = ds.sel(lon=slice(point_loc[0]-1,point_loc[0]+1),
-                lat=slice(point_loc[1]-1,point_loc[1]+1) )
-    
+    if model_source.source=='MITgcm':
+        # every array on rho grid
+        ds = ds.sel({nameLon_rho:slice(point_loc[0]-1,point_loc[0]+1),
+                    nameLon_rho:slice(point_loc[1]-1,point_loc[1]+1)})
+    elif model_source.source == 'Crocco':
+        # staggered grid
+        ds = ds.sel({nameLon_u:slice(point_loc[0]-1,point_loc[0]+1),
+                     nameLon_v:slice(point_loc[0]-1,point_loc[0]+1),
+                     nameLon_rho:slice(point_loc[0]-1,point_loc[0]+1),
+                    nameLat_u:slice(point_loc[1]-1,point_loc[1]+1),
+                    nameLat_v:slice(point_loc[1]-1,point_loc[1]+1),
+                    nameLat_rho:slice(point_loc[1]-1,point_loc[1]+1)})
+        ds[nameU] = xGrid
+        
+        
     # large scale filtering of SSH
     sigmax, sigmay = 3, 3
-    ds['SSH'] = xr.where(ds['SSH']>1e5,np.nan,ds['SSH'])
-    gSSH_LS0 = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, nt, N_CPU, ns=2)
+    ds[nameSSH] = xr.where(ds[nameSSH]>1e5,np.nan,ds[nameSSH])
+    gSSH_LS0 = my2dfilter_over_time(ds[nameSSH].values,sigmax,sigmay, nt, N_CPU, ns=2)
     gSSH_LS = mytimefilter(gSSH_LS0)  
     
     # getting geo current from SSH
-    glon2,glat2 = np.meshgrid(ds.lon.values,ds.lat.values)
+    glon2,glat2 = np.meshgrid(ds[nameLat_rho].values,ds[nameLat_rho].values)
     fc = 2*2*np.pi/86164*np.sin(glat2*np.pi/180)
-    dlon = (ds.lon[1]-ds.lon[0]).values
-    dlat = (ds.lat[1]-ds.lat[0]).values
+    dlon = (ds[nameLat_rho][1]-ds[nameLat_rho][0]).values
+    dlat = (ds[nameLat_rho][1]-ds[nameLat_rho][0]).values
     gUg = gSSH_LS*0.
     gVg = gSSH_LS*0.
     for it in range(nt):
@@ -176,28 +232,29 @@ def interp_at_model_t_1D(list_files, dt, point_loc, N_CPU, path_save, method='li
     gVg[:,:,0] = gVg[:,:,1]
     gVg[:,:,-1]= gVg[:,:,-2]
      
-    ds['Ug'] = (ds['SSU'].dims,
+    ds['Ug'] = (ds[nameU].dims,
                         gUg,
                         {'standard_name':'zonal_geostrophic_current',
                             'long_name':'zonal geostrophic current from SSH',
                             'units':'m s-1',})
-    ds['Vg'] = (ds['SSU'].dims,
+    ds['Vg'] = (ds[nameV].dims,
                         gVg,
                         {'standard_name':'meridional_geostrophic_current',
                             'long_name':'meridional geostrophic current from SSH',
                             'units':'m s-1',}) 
      
     # selecting the location in 1D (time)
-    ds = ds.sel(lon=point_loc[0],lat=point_loc[1])
-    LON = ds.lon.values # scalar
-    LAT = ds.lat.values # scalar
+    ds = ds.sel({'nameLon':point_loc[0],
+                 'nameLat':point_loc[1]})
+    LON = ds[nameLat_rho].values # scalar
+    LAT = ds[nameLat_rho].values # scalar
 
     # removing geostrophy
-    ds['SSU'].data = ds['SSU'].values - ds['Ug'].values
-    ds['SSV'].data = ds['SSV'].values - ds['Vg'].values
+    ds[nameU].data = ds[nameU].values - ds['Ug'].values
+    ds[nameV].data = ds[nameV].values - ds['Vg'].values
     
     # new time vector
-    time = np.arange(ds.time.values[0], ds.time.values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
+    time = np.arange(ds[nameTime].values[0], ds[nameTime].values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
     ds_i = ds.interp({'time':time},method=method) # linear interpolation in time
         
     # stress as: C x wind**2

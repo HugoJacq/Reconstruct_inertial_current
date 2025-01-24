@@ -28,6 +28,7 @@ from build_LS_fields import *
 from observations import *
 from forcing import *
 from unstek import *
+from junstek import *
 from inv import *
 from tools import *
 from scores import *
@@ -59,7 +60,7 @@ period_obs = 86400                  # s, how many second between observations
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
 #vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
-vector_k=np.array([-3,-8,-10,-12])    # 2 layers
+vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 MINIMIZE = True
@@ -75,7 +76,7 @@ MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
-LINK_K_AND_PHYSIC       = True     # link the falues of vector K with physical variables
+LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -88,6 +89,9 @@ files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025
                         'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
                         'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
                         },
+              'Crocco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
+                        '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
+                              '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
             }
 
 
@@ -108,23 +112,24 @@ path_save_interp1D = './'           # where to save interpolated (on model dt) c
 ##################################################
 
 
-files_dict['MITgcm']['filesALL'] = ( list(files_dict['MITgcm']['filesUV']) + 
+files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
                                     list(files_dict['MITgcm']['filesH']) + 
                                     list(files_dict['MITgcm']['filesW']) + 
                                     list(files_dict['MITgcm']['filesD']) + 
                                     list(files_dict['MITgcm']['filesTau']) )
 
-files_list_all = files_dict[SOURCE]['filesALL']
 
-if TRUE_WIND_STRESS: path_save_png1D = path_save_png1D + '_Tau/'
-else: path_save_png1D = path_save_png1D + '_UU/'
+path_save_png1D += SOURCE+'_'
+if TRUE_WIND_STRESS: path_save_png1D += '_Tau/'
+else: path_save_png1D += '_UU/'
     
 
 if __name__ == "__main__":  # This avoids infinite subprocess creation
     
+    # create directories for ouputs
     if not os.path.isdir(path_save_png1D):
         os.system('mkdir '+path_save_png1D)
-    
+     
     global client
     client = None
     if DASHBOARD:
@@ -139,11 +144,15 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
     print('* Interpolation on unsteady ekman model timestep')
-    interp_at_model_t_1D(files_list_all, dt, point_loc, N_CPU, path_save_interp1D)
-    
+    files_list_all = files_dict[SOURCE]['files_sfx']
+    model_source = Model_source_OSSE(SOURCE, files_list_all)
+    interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interp1D)
+    (nameLon_u, nameLon_v, nameLon_rho,
+     nameLat_u, nameLat_v, nameLat_rho, 
+     nameSSH, nameU, nameV, nameTime)= model_source.get_name_dim()
     
     # observation and forcing
-    path_file = 'Interp_1D_LON-24.8_LAT45.2.nc'
+    path_file = SOURCE+'_Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
     forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)   
     observations = Observation1D(period_obs, dt, path_file)
     Uo,Vo = observations.get_obs()
@@ -151,7 +160,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # intialisation of the model
     Nl = len(vector_k)//2
-    model = Unstek1D(Nl, forcing, observations)
+    model = jUnstek1D(Nl, forcing, observations)
     var = Variational(model, observations)
         
     # INVERSE PROBLEM
@@ -212,8 +221,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         # dsUV = xr.open_mfdataset(filesUV)
         # dsSSH = xr.open_mfdataset(filesH)
         ds = xr.open_mfdataset(files_list_all)
-        glon = ds.lon
-        glat = ds.lat
+        glon = ds[nameLon_rho]
+        glat = ds[nameLon_rho]
         
         TauX, TauY = ds['oceTAUX'],ds['oceTAUY']
         U, V = ds['SSU'],ds['SSV']
@@ -305,7 +314,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         
         # using the value of K from minimization, we get currents
         _, Ca = model.do_forward(vector_k)
-        Ua, Va = np.real(Ca),np.imag(Ca)
+        Ua, Va = np.real(Ca)[0],np.imag(Ca)[0]
         RMSE = score_RMSE(Ua, U)      
         
         title = ''

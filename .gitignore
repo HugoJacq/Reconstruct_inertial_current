@@ -88,3 +88,15 @@ build_LS_fields.pySAVE24012025
 ncdiff_log.txt
 reconstruct_inertial.pySAVE24012025
 V1_Interp_1D_LON-24.8_LAT45.2.nc
+__pycache__/build_LS_fields.cpython-310.pyc
+__pycache__/constants.cpython-310.pyc
+__pycache__/filters.cpython-310.pyc
+__pycache__/forcing.cpython-310.pyc
+__pycache__/inv.cpython-310.pyc
+__pycache__/junstek.cpython-310.pyc
+__pycache__/junstek.cpython-311.pyc
+__pycache__/observations.cpython-310.pyc
+__pycache__/scores.cpython-310.pyc
+__pycache__/tools.cpython-310.pyc
+__pycache__/unstek.cpython-310.pyc
+MITgcm_Interp_1D_LON-24.8_LAT45.2.nc
