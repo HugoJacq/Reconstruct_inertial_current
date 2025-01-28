@@ -1,22 +1,8 @@
 import numpy as np
 from joblib import Parallel, delayed
 import scipy as sp
+import xarray as xr
 
-# @jit(nopython=True, fastmath=True)
-# def meshgrid(x, y, indexing='ij'):
-#     xx = np.empty(shape=(x.size, y.size), dtype=x.dtype)
-#     yy = np.empty(shape=(x.size, y.size), dtype=y.dtype)
-#     if indexing=='ij':
-#         for i in range(x.size):
-#             for j in range(y.size):
-#                 xx[i,j] = i  # change to x[k] if indexing xy
-#                 yy[i,j] = j  # change to y[j] if indexing xy
-#     else:
-#         for i in range(x.size):
-#             for j in range(y.size):
-#                 xx[i,j] = x[j]  # change to x[k] if indexing xy
-#                 yy[i,j] = y[i]  # change to y[j] if indexing xy
-#     return xx, yy
 
 def my2dfilter(s,sigmax,sigmay, ns=2):
     """
@@ -42,9 +28,10 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     #     conv2d = lambda x: sp.signal.convolve2d(x, cf, mode="same")
     #     s_sum = xr.apply_ufunc(conv2d, s)
     #     w_sum = xr.apply_ufunc(conv2d, m)
+    #print('s.shape,cf.shape,cf.shape',s.shape,cf.shape,cf.shape)
     s_sum = (sp.signal.convolve2d(s, cf, mode='same'))
     w_sum = (sp.signal.convolve2d(m, cf, mode='same'))
-
+    #print('s_sum.shape,w_sum.shape',s_sum.shape,w_sum.shape)
     sf = s*0.
     sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
     return sf
@@ -57,6 +44,7 @@ def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2):
         list_results = []
         for it in range(nt):
             list_results.append( my2dfilter(s[it,:,:], sigmax, sigmay) )
+            print(list_results[-1])
     else:
         list_results = Parallel(n_jobs=N_CPU)(delayed(my2dfilter)(s[it,:,:], sigmax, sigmay) for it in range(nt))
     
@@ -85,3 +73,74 @@ def mytimefilter(Hf0):
         for iy in range(ny):
             Hf[:,iy,ix] = np.convolve(Hf0[:,iy,ix],gl,'same')
     return Hf
+
+
+
+#
+# ATTEMPT TO USE XARRAY AND BUILD A XR CONVOLUTION
+#
+
+
+
+
+#convolve2D_vectorized = np.vectorize( sp.signal.convolve2d,
+ #                       signature='(k,m,n),(i,j)->(m,n)')
+
+
+
+
+# def convolve2D_ufunc(array,cf,mode='same'):
+#     shape_cf = cf.shape
+#     cf2 = np.zeros((shape_cf[0],shape_cf[1],1))
+#     print('SIZE BEFORE CONVOLVE',array.shape,cf2.shape)
+#     ufunc = lambda x: sp.signal.convolve(x,cf2,mode)
+#     return xr.apply_ufunc(
+# 		ufunc,	# func to use
+# 		array,				# input of func, usually numpy array
+# 		dask="parallelized", # parallelized, to allow // computing if array is already chuncked
+# 		input_core_dims=[['time']],	# axis of work of func
+# 		output_core_dims=[['time']],
+# 		#kwargs={'sigmax':sigmax,'sigmay':sigmay,'ns':ns}, # kwargs of func
+# 		output_dtypes=[array.dtype],				# this is passed to Dask
+# 		dask_gufunc_kwargs={'allow_rechunk':False},	# this is passed to Dask, if core dim is chuncked
+#         vectorize=False,
+# 	        ).transpose("time",... )
+    
+    
+
+# def my2dfilter_xr(array,sigmax,sigmay,ns=2):
+#     print('entering my2dfilter_xr')
+#     x, y = np.meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
+#     #x, y = meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
+#     cf=np.exp(-(x**2/sigmax**2+y**2/sigmay**2))
+    
+    
+#     #m= ~np.isnan(s)*1.
+#     m = xr.where( xr.ufuncs.isnan(array), 0., 1.0)
+    
+#     #s = np.where(np.isnan(s),0,s)
+#     s = xr.where( xr.ufuncs.isnan(array), 0., array)
+
+#     print(s)
+#     print(m)
+
+#     print('begin of convolve')
+#     print('s.shape,cf.shape,cf.shape',s.shape,cf.shape,cf.shape)
+#     s_sum = convolve2D_ufunc(s, cf)
+#     w_sum = convolve2D_ufunc(m, cf)
+#     print('s_sum.shape,w_sum.shape',s_sum.shape,w_sum.shape)
+#     print('end of convolve')
+#     #sf = s*0.
+#     #sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
+#     sf = xr.where( w_sum!=0, s_sum/w_sum, 0)
+    
+#     print('s',s)
+#     print('s_sum',s_sum)
+#     print('w_sum',w_sum)
+#     print('sf',sf)
+
+#     return sf
+
+
+
+

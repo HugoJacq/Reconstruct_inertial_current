@@ -162,7 +162,8 @@ class jUnstek1D:
 
         arg0 = pk, U
         X0 = pk, U
-        with warnings.catch_warnings(action="ignore"): # dont show overflow results
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore') # dont show overflow results
             _, U = lax.fori_loop(0,self.nt,self.__one_step_jit,arg0)
             
         self.Ur_traj = U
@@ -170,14 +171,6 @@ class jUnstek1D:
 
         return pk, U
     
-
-    # def tgl(self, k0, dk0):
-    #     U0 = jnp.zeros((self.nl,self.nt), dtype='complex')
-    #     dU0 = jnp.zeros((self.nl,self.nt), dtype='complex')
-    #     K0 = self.K_transform(k0)
-    #     dK0 = self.K_transform(k0, order=1)*dk0
-    #     _, (dK,dU) = jvp(self.do_forward_jit, (K0, U0), (dK0, dU0) )
-    #     return dK,dU
     
     def tgl(self, k0):
         U0 = jnp.zeros((self.nl,self.nt), dtype='complex')

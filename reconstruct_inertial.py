@@ -41,26 +41,25 @@ start = clock.time()
 # //
 DASHBOARD = False   # when using dask
 N_CPU = 12          # when using joblib, if >1 then use // code
-JAXIFY = False      # whether to use JAX or not
+JAXIFY = True      # whether to use JAX or not
 
 # -> area of interest
-box= [-25, -24, 45, 46]            # left lon, right lon, bottom lat, top lat
 # -> index for spatial location. We work in 1D
-ir=4                                # lon index
-jr=4                                # lat index
-point_loc = [-24.8,45.2]
+point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
+                    'Croco':[-50.,35.]}
+ 
 
 # -> Observations : OSSE
-SOURCE = 'MITgcm'
-TRUE_WIND_STRESS = False            # whether to use Cd.U**2 or Tau
+SOURCE = 'Croco'                   # MITgcm Croco
+TRUE_WIND_STRESS = True             # whether to use Cd.U**2 or Tau
 dt = 60                             # timestep of the model (s) 
 period_obs = 86400                  # s, how many second between observations
 
 # -> LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-#vector_k = np.array([-3,-12]) # [-3,-12]         # 1 layers
-vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
+vector_k = np.array([-3.,-12.]) # [-3,-12]         # 1 layers
+#vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 MINIMIZE = True
@@ -74,7 +73,7 @@ PRINT_INFO = False                  # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = False     # maps the cost function values
+ONE_LAYER_COST_MAP      = True     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
@@ -89,53 +88,69 @@ files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025
                         'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
                         'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
                         },
-              'Crocco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
+              'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
                         '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                               '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
             }
 
-
-
-
-# filesUV = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc"))
-# filesH = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc"))
-# filesW = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc"))
-# filesD = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc"))
-# filesTau = np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc"))
-
 # -> list of save path
-path_save_png1D = './png_1D'        # where to save pngs for 1D study
-path_save_LS = './'                 # where to save large scale file
 path_save_interp1D = './'           # where to save interpolated (on model dt) currents
 
 # END PARAMETERS #################################
 ##################################################
+if SOURCE=='Crocco':
+    SOURCE='Croco'
+if JAXIFY:
+    nameJax = 'JAX_'
+else:
+    nameJax = ''
 
+point_loc = point_loc_source[SOURCE]
 
+print('')
+print('*********************************')
+print('* SOURCE = '+SOURCE)
+print('* MODE = 1D')
+print('*    LOCATION [W,E]= '+str(point_loc))
+print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
+print('* JAXIFY = '+str(JAXIFY))
+print('*********************************')
+print('')
+# where to save pngs for 1D study
+path_save_png1D = './png_1D/'
+if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+#
+path_save_png1D += SOURCE+'/'
+if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+#
+path_save_png1D += 'LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'/'
+if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+#   
+if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
+else: path_save_png1D += 'stress_UU/'
+if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+
+# concatenate files
 files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
                                     list(files_dict['MITgcm']['filesH']) + 
                                     list(files_dict['MITgcm']['filesW']) + 
                                     list(files_dict['MITgcm']['filesD']) + 
                                     list(files_dict['MITgcm']['filesTau']) )
+files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
 
 
-path_save_png1D += SOURCE+'_'
-if TRUE_WIND_STRESS: path_save_png1D += '_Tau/'
-else: path_save_png1D += '_UU/'
+
     
-
-if __name__ == "__main__":  # This avoids infinite subprocess creation
+# MAIN LOOP
+# This avoids infinite subprocess creation
+if __name__ == "__main__":  
     
-    # create directories for ouputs
-    if not os.path.isdir(path_save_png1D):
-        os.system('mkdir '+path_save_png1D)
-     
     global client
     client = None
     if DASHBOARD:
         # sometimes dask cluster can cause problems "memoryview is too large"
         # (writing a big netcdf file for eg, hbudget_file)
-        cluster = LocalCluster(threads_per_worker=32,n_workers=8)
+        cluster = LocalCluster(n_workers=8) # threads_per_worker=1,
         
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
@@ -146,10 +161,12 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     print('* Interpolation on unsteady ekman model timestep')
     files_list_all = files_dict[SOURCE]['files_sfx']
     model_source = Model_source_OSSE(SOURCE, files_list_all)
+        
     interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interp1D)
     (nameLon_u, nameLon_v, nameLon_rho,
      nameLat_u, nameLat_v, nameLat_rho, 
-     nameSSH, nameU, nameV, nameTime)= model_source.get_name_dim()
+     nameSSH, nameU, nameV, nameTime,
+     nameOceTaux,nameOceTauy)= model_source.get_name_dim()
     
     # observation and forcing
     path_file = SOURCE+'_Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
@@ -160,7 +177,10 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     
     # intialisation of the model
     Nl = len(vector_k)//2
-    model = jUnstek1D(Nl, forcing, observations)
+    if JAXIFY:
+        model = jUnstek1D(Nl, forcing, observations)
+    else:
+        model = Unstek1D(Nl, forcing, observations)
     var = Variational(model, observations)
         
     # INVERSE PROBLEM
@@ -215,66 +235,117 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
     #
     # Where am i ?
     if MAP_1D_LOCATION:
-        print(' * Plotting the full data set')
-        # dsTau = xr.open_mfdataset(filesTau) #.sel(lon=slice(box[0],box[1]),lat=slice(box[2],box[3]))
-        # dsWind = xr.open_mfdataset(filesW)
-        # dsUV = xr.open_mfdataset(filesUV)
-        # dsSSH = xr.open_mfdataset(filesH)
-        ds = xr.open_mfdataset(files_list_all)
-        glon = ds[nameLon_rho]
-        glat = ds[nameLon_rho]
+        print(" * Plotting the data set around 'point_loc'")
+        # box= [-25, # °E
+        #       -24, # °E
+        #       45, # °N
+        #       46]  # °N *
+        L_AREA = ['small','large','xlarge']
         
-        TauX, TauY = ds['oceTAUX'],ds['oceTAUY']
-        U, V = ds['SSU'],ds['SSV']
-        U10m, V10m = ds['geo5_u10m'],ds['geo5_v10m']
-        SSH = ds['SSH']
-        
-        proj = ccrs.PlateCarree() # ccrs.Mercator()
-        clb_or = 'horizontal'
-        lon_formatter = LongitudeFormatter()
-        lat_formatter = LatitudeFormatter()
-        Nlevel_cb = 3
-        levels_SSH = np.arange(-0.3, 0.32, 0.02)
-        ticks_label_SSH = np.arange(-0.3,0.31,0.1)
-        levels_Taux = np.arange(0.15, 0.205, 0.005)
-        ticks_label_Taux = np.arange(0.15, 0.21, 0.01)
-        levels_Tauy = np.arange(0.5, 0.565, 0.005)
-        ticks_label_Tauy = np.arange(0.5, 0.56, 0.01)
-        tick_locator = mticker.MultipleLocator
-        
-        
-        fig, ax = plt.subplots(1, 3, figsize = (12,4), subplot_kw={'projection':proj}, constrained_layout=True,dpi=dpi)
-        
-        s = ax[0].contourf(glon.values,glat.values,SSH[0].values, levels=levels_SSH, cmap='seismic', extend='both')
-        cb = plt.colorbar(s,ax=ax[0], aspect=50, pad=0.01, label='SSH (m)', orientation=clb_or,
-                          ticks=ticks_label_SSH)
-        s = ax[1].contourf(glon.values,glat.values,TauX[0].values, levels=levels_Taux, extend='both')
-        cb = plt.colorbar(s,ax=ax[1], aspect=50, pad=0.01, label=r'$\tau_x$ (m2/s2)', orientation=clb_or,
-                           ticks=ticks_label_Taux )        
-        s = ax[2].contourf(glon.values,glat.values,TauY[0].values, levels=levels_Tauy, extend='both')
-        cb = plt.colorbar(s,ax=ax[2], aspect=50, pad=0.01, label=r'$\tau_y$ (m2/s2)', orientation=clb_or,
-                          ticks=ticks_label_Tauy)
-        
-        
-        for axe in ax.flatten():
-            axe.set_xticks(np.arange(-180,180,0.1), crs=ccrs.PlateCarree())
-            axe.set_yticks(np.arange(-90,90,0.1), crs=ccrs.PlateCarree())
-            axe.xaxis.set_major_locator(mticker.MultipleLocator(0.5))
-            axe.xaxis.set_minor_locator(mticker.MultipleLocator(0.1))
-            axe.yaxis.set_major_locator(mticker.MultipleLocator(0.5))
-            axe.yaxis.set_minor_locator(mticker.MultipleLocator(0.1))
-            axe.xaxis.set_major_formatter('{x}E')
-            axe.yaxis.set_major_formatter('{x}N')
+        dict_box = {"small":{'incr':1,
+                           'major_xtick':0.5,
+                           'minor_xtick':0.1,
+                           'grid_tick':1},
+                    "large":{'incr':5,
+                           'major_xtick':5,
+                           'minor_xtick':1,
+                           'grid_tick':1},
+                    "xlarge":{'incr':10,
+                           'major_xtick':5,
+                           'minor_xtick':1,
+                           'grid_tick':1},
+                    }
+        for AREA in L_AREA:
+            incr = dict_box[AREA]['incr']
+            grd_tick = dict_box[AREA]['grid_tick']
+            box= [point_loc[0]-incr, # °E
+                point_loc[0]+incr, # °E
+                point_loc[1]-incr, # °N
+                point_loc[1]+incr]  # °N    
             
-            gl = axe.gridlines(draw_labels=False, linewidth=1, color='gray', alpha=0.5, linestyle='--')
-            gl.xlocator = tick_locator(0.5)
-            gl.ylocator = tick_locator(0.5)
-            gl.xformatter = LongitudeFormatter()
-            gl.yformatter = LatitudeFormatter()
-            # axe.set_xlim([box[0],box[1]])
-            axe.set_extent(box, crs=proj)
-            axe.tick_params(which='both',bottom=True, top=True, left=True, right=True)
-       
+            step_minor_xtick = dict_box[AREA]['minor_xtick']
+            step_minor_ytick = step_minor_xtick
+            step_major_xtick = dict_box[AREA]['major_xtick']
+            step_major_ytick = step_major_xtick
+            
+            ds = model_source.dataset
+            if model_source.source == 'MITgcm':
+                glon,glon_u,glon_v = ds[nameLon_rho],ds[nameLon_rho],ds[nameLon_rho]
+                glat,glat_u,glat_v = ds[nameLat_rho],ds[nameLat_rho],ds[nameLat_rho]
+                #
+                cmapSSH = 'seismic'
+                levels_SSH = np.arange(-0.3, 0.32, 0.02)
+                ticks_label_SSH = np.arange(-0.3,0.31,0.1)
+                #
+                cmapTaux = 'plasma'
+                levels_Taux = np.arange(0.1, 0.31, 0.01)
+                ticks_label_Taux = np.arange(0.1, 0.35, 0.05)
+                # 
+                cmapTauy = 'plasma'
+                levels_Tauy = np.arange(0.4, 0.61, 0.01)
+                ticks_label_Tauy = np.arange(0.4, 0.62, 0.02)
+
+            elif model_source.source == 'Croco':
+                glon,glon_u,glon_v = ds[nameLon_rho],ds[nameLon_u],ds[nameLon_v]
+                glat,glat_u,glat_v = ds[nameLat_rho],ds[nameLat_u],ds[nameLat_v]
+                #
+                levels_SSH = np.arange(-0.5, 0.55, 0.05)
+                ticks_label_SSH = np.arange(-0.5, 0.52, 0.2)
+                cmapSSH = 'seismic'
+                #
+                levels_Taux = np.arange(-0.1, 0.11, 0.01)
+                ticks_label_Taux = np.arange(-0.1, 0.14, 0.04)
+                cmapTaux = 'seismic'
+                #
+                levels_Tauy = levels_Taux # np.arange(0.5, 0.565, 0.005)
+                ticks_label_Tauy = ticks_label_Taux #np.arange(0.5, 0.56, 0.01)
+                cmapTauy = cmapTaux
+            
+            U, V = ds[nameU],ds[nameV]   
+            TauX, TauY = ds[nameOceTaux],ds[nameOceTauy]
+            #U10m, V10m = ds['geo5_u10m'],ds['geo5_v10m']
+            SSH = ds[nameSSH]
+            
+            proj = ccrs.PlateCarree() # ccrs.Mercator()
+            clb_or = 'horizontal'
+            lon_formatter = LongitudeFormatter()
+            lat_formatter = LatitudeFormatter()
+            Nlevel_cb = 3
+            
+            tick_locator = mticker.MultipleLocator
+            
+            
+            fig, ax = plt.subplots(1, 3, figsize = (12,4), subplot_kw={'projection':proj}, constrained_layout=True,dpi=dpi)
+            s = ax[0].contourf(glon.values,glat.values,SSH[0].values, levels=levels_SSH, cmap=cmapSSH, extend='both')
+            cb = plt.colorbar(s,ax=ax[0], aspect=50, pad=0.01, label='SSH (m)', orientation=clb_or,
+                            ticks=ticks_label_SSH)
+            s = ax[1].contourf(glon_u.values,glat_u.values,TauX[0].values, levels=levels_Taux, cmap=cmapTaux, extend='both')
+            cb = plt.colorbar(s,ax=ax[1], aspect=50, pad=0.01, label=r'$\tau_x$ (m2/s2)', orientation=clb_or,
+                            ticks=ticks_label_Taux )        
+            s = ax[2].contourf(glon_v.values,glat_v.values,TauY[0].values, levels=levels_Tauy, cmap=cmapTauy, extend='both')
+            cb = plt.colorbar(s,ax=ax[2], aspect=50, pad=0.01, label=r'$\tau_y$ (m2/s2)', orientation=clb_or,
+                            ticks=ticks_label_Tauy)
+            
+            
+            for axe in ax.flatten():
+                axe.set_xticks(np.arange(-180,180,0.1), crs=ccrs.PlateCarree())
+                axe.set_yticks(np.arange(-90,90,0.1), crs=ccrs.PlateCarree())
+                axe.xaxis.set_major_locator(mticker.MultipleLocator(step_major_xtick))
+                axe.xaxis.set_minor_locator(mticker.MultipleLocator(step_minor_xtick))
+                axe.yaxis.set_major_locator(mticker.MultipleLocator(step_major_ytick))
+                axe.yaxis.set_minor_locator(mticker.MultipleLocator(step_minor_ytick))
+                axe.xaxis.set_major_formatter('{x}E')
+                axe.yaxis.set_major_formatter('{x}N')
+                
+                gl = axe.gridlines(draw_labels=False, linewidth=1, color='gray', alpha=0.5, linestyle='--')
+                gl.xlocator = tick_locator(grd_tick)
+                gl.ylocator = tick_locator(grd_tick)
+                gl.xformatter = LongitudeFormatter(grd_tick)
+                gl.yformatter = LatitudeFormatter(grd_tick)
+                axe.set_extent(box, crs=proj)
+                axe.tick_params(which='both',bottom=True, top=True, left=True, right=True)
+            fig.savefig(path_save_png1D+nameJax+'Local_map_'+AREA+'.png')
+        
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         print('* Minimization with '+str(Nl)+' layers')
@@ -291,6 +362,8 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         print('-> time for dJ = ',np.round(clock.time() - t2,4) )
         
         if PARALLEL_MINIMIZED:
+            if JAXIFY:
+                raise Exception('STOP: // minimize with JAX is not yet available.')
             # this does not work with Unstek1D class
             res = minimize_parallel(fun=var.cost, x0=vector_k, #  args=(time, fc, TAx, TAy, Uo, Vo, Ri)
                               jac=var.grad_cost,
@@ -322,6 +395,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             title += 'k'+str(k)+','   
         title = title[:-1]+' = '+str(res['x']) + ' ('+str(np.round(RMSE,3))+')'
         
+            
         # PLOT trajectory
         plt.figure(figsize=(10,3),dpi=dpi)
         plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
@@ -332,9 +406,9 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
-        plt.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nl)+'layers.png')
+        plt.savefig(path_save_png1D+nameJax+'series_reconstructed_long_'+str(Nl)+'layers.png')
         
-        # Plot MLD
+        # Plot with MLD
         fig, ax = plt.subplots(2,1,figsize = (10,6),constrained_layout=True,dpi=dpi)
         ax[0].plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
         ax[0].plot(forcing.time/86400,Ua, c='g', label='Unstek')
@@ -345,7 +419,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         ax[1].plot(forcing.time/86400, - forcing.MLD, c='k')
         ax[1].set_xlabel('Time (days)')
         ax[1].set_ylabel('MLD (m)')
-        fig.savefig(path_save_png1D+'series_reconstructed_long_'+str(Nl)+'layers_withMLD.png')
+        fig.savefig(path_save_png1D+nameJax+'series_reconstructed_long_'+str(Nl)+'layers_withMLD.png')
       
     # Plotting trajectories of given vector_k
     # plotting tool for trajectory of 'unstek' for specific vector_k
@@ -413,7 +487,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             plt.title(title)
             plt.legend(loc=1)
             plt.tight_layout()
-            plt.savefig(path_save_png1D+'series_reconstructed_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
+            plt.savefig(path_save_png1D+nameJax+'series_reconstructed_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')
 
             # Plot PSD score
             # TO DO: i need to plot rotary spectra
@@ -441,7 +515,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
                 ax.set_ylabel(r'V$_{E}$ (m/s)')
                 ax.set_xlim([0,0.15])
                 ax.set_ylim([0,0.15])
-                fig.savefig(path_save_png1D+'Hodograph_from_stepTau_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')    
+                fig.savefig(path_save_png1D+nameJax+'Hodograph_from_stepTau_'+str(len(vector_k)//2)+'layers'+txt_add+'.png')    
       
     # looking at the cost function
     #   for a slab model (1 layer)
@@ -451,14 +525,22 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         PLOT_ITERATIONS = False
         kmin = -15
         kmax = 0
-        step = 0.25
+        step = 1 #0.25
         maxiter = 10
         vector_k = np.array([-12,-12]) # initial vector k
+        Nl = 1
         Jmap_cmap = 'terrain'
         
         tested_values = np.arange(kmin,kmax,step)  # -15,0,0.25
 
-        if N_CPU>1:
+        if JAXIFY:
+            model = jUnstek1D(Nl, forcing, observations)
+            vector_k = jnp.asarray(vector_k)
+        else:
+            model = Unstek1D(Nl, forcing, observations)
+        var = Variational(model, observations)
+        
+        if N_CPU>1 and not JAXIFY:
             J = Parallel(n_jobs=N_CPU)(delayed(
                     var.cost)(np.array([k0,k1]))
                         for k0 in tested_values for k1 in tested_values)
@@ -498,7 +580,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
             plt.scatter(vector_k_iter[0,:],vector_k_iter[1,:],c=['r']+['k']*(len(cost_iter[:])-2)+['g'],marker='x') # ,s=0.1
         ax.set_xlabel('log(k0)')
         ax.set_ylabel('log(k1)')
-        plt.savefig(path_save_png1D+'k0k1_J_1layer'+txt_add+'.png')
+        plt.savefig(path_save_png1D+nameJax+'k0k1_J_1layer'+txt_add+'.png')
         
     # plot de J(k1,k2), à k0 et k3 fixés à leur valeur convergée
     if TWO_LAYER_COST_MAP_K1K2:
@@ -560,7 +642,7 @@ if __name__ == "__main__":  # This avoids infinite subprocess creation
         ax.scatter(k1_mini, k2_mini,marker='x',c='g')
         ax.set_xlabel('log(k1)')
         ax.set_ylabel('log(k2)')
-        plt.savefig(path_save_png1D+'k1k2_J_2layer.png')
+        plt.savefig(path_save_png1D+nameJax+'k1k2_J_2layer.png')
 
     
     if LINK_K_AND_PHYSIC:

@@ -9,7 +9,7 @@ class Observation1D:
         
         # from dataset for OSSE
         self.data = xr.open_dataset(path_file)
-        self.U,self.V = self.data.SSU.values,self.data.SSV.values
+        self.U,self.V = self.data.U.values,self.data.V.values
         self.dt = dt_model
         self.obs_period = periode_obs
         self.time_obs = np.arange(0, len(self.data.time)*dt_model,periode_obs)

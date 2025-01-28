@@ -64,16 +64,10 @@ class Variational:
         Note: this function works with numpy arrays
         """
         _, C = self.model.do_forward(pk)
-        U, V = np.real(C),np.imag(C)
-        
-        with warnings.catch_warnings(action="ignore"): # dont show overflow results
-            A = U[::self.obs_period//self.model_dt]
-            B = V[::self.obs_period//self.model_dt]
-            J = 0.5 * np.nansum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
-        if np.sum( np.isnan(U) ) + np.sum(np.isnan(V))>0:
-            # some nan have been detected, the model has crashed with 'pk'
-            # so J is nan.
-            J = np.nan
+        U, V = np.real(C)[0],np.imag(C)[0]
+        A = U[::self.obs_period//self.model_dt]
+        B = V[::self.obs_period//self.model_dt]
+        J = 0.5 * np.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         return J
  
     def nojax_grad_cost(self, pk):
@@ -83,12 +77,12 @@ class Variational:
         INPUT:
             - pk    : K vector
         OUTPUT:
-            - gradient of the cost function
+            - gradient of the cost function with respect to pk
             
         Note: this function works with numpy arrays
         """
         _, C = self.model.do_forward(pk)
-        U, V = np.real(C),np.imag(C)
+        U, V = np.real(C)[0],np.imag(C)[0]
 
         # distance to observations (innovation)
         # this is used in the adjoint to add a forcing where obs is available

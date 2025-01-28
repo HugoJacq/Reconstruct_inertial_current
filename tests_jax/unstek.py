@@ -59,12 +59,12 @@ class Unstek1D:
             if ((ik==0)&(ik==self.nl-1)): 
                 U[ik,it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) )
             else:
-                if ik==0: U[ik, it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) 
+                if ik==0: U[ik, it+1] = U[ik, it] + self.dt*( -1j*self.fc*U[ik, it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik, it]-U[ik+1, it]) ) 
                 elif ik==self.nl-1:  U[ik,it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) 
                 else: U[ik,it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) 
         return pk, U
         
-    def do_forward(self, pk, return_traj=False):
+    def do_forward(self, pk):
         """
         Unsteady Ekman model forward model
         
@@ -83,11 +83,14 @@ class Unstek1D:
             raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
         
         arg0 = pk, U
-        with warnings.catch_warnings(action="ignore"): # dont show overflow results
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore') # dont show overflow results
             for it in range(self.nt-1):
                 _, U = self.step(it, arg0)
-        if return_traj: return pk, U
-        else: return pk, U[0]
+                
+        self.Ur_traj = U
+        self.Ua, self.Va = np.real(U[0,:]), np.imag(U[0,:])  # first layer        
+        return pk, U
          
     def step_tgl(self, K, dK, it, U, dU):
         """
@@ -194,7 +197,7 @@ class Unstek1D:
             
         Note: this function works with numpy arrays
         """
-        _, U = self.do_forward(pk, return_traj=True)
+        _, U = self.do_forward(pk)
             
         ad_U = np.zeros((self.nl,self.nt), dtype='complex')
         ad_U[0,:] = d[0] + 1j*d[1] 

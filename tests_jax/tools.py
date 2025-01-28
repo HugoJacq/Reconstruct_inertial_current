@@ -2,7 +2,7 @@
 Tool module for "reconstruct_inertial.py"
 """
 from math import factorial
-
+import scipy as sp
 import numpy as np
 
 def PSD(time_vect, signal_vect):
@@ -139,3 +139,12 @@ def nearest(array,value):
 	value is 0D
 	"""
 	return np.argmin(np.abs(array-value))	
+
+def find_indices(points,lon,lat,tree=None):
+    if tree is None:
+        lon,lat = lon.T,lat.T
+        lonlat = np.column_stack((lon.ravel(),lat.ravel()))
+        tree = sp.spatial.cKDTree(lonlat)
+    dist,idx = tree.query(points,k=1)
+    ind = np.column_stack(np.unravel_index(idx,lon.shape))
+    return [(i,j) for i,j in ind]
