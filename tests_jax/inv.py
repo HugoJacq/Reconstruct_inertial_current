@@ -13,8 +13,7 @@ import chex
 import time as clock
 import jaxopt
 
-gpu_device = jax.devices('gpu')[0]
-cpu_device = jax.devices('cpu')[0]
+from constants import *
 
 def value_and_grad_jvp(f):   
     return lambda x: ( f(x), jax.jacfwd(f)(x) )
@@ -46,7 +45,7 @@ class Variational:
 
         # JAX
         self.jax_grad_cost_jit = jit(self.jax_grad_cost, device=gpu_device) # faster on gpu
-        self.jax_cost_jit = jit(self.jax_cost)
+        self.jax_cost_jit = jit(self.jax_cost, device=gpu_device)
         #self.jax_cost_vect_jit = jit(self.jax_cost_vect, device=cpu_device) # faster on cpu
         self.step_jax_cost_vect_jit = jit(self.step_jax_cost_vect, device=gpu_device) 
         
@@ -131,7 +130,7 @@ class Variational:
         Using grad from JAX
         """
         #return grad(self.jax_cost_jit)(pk) # this is much slower than jax.jacfwd
-        return jax.jacfwd(self.jax_cost_jit)(pk) # this is much faster than jax.grad
+        return jax.jacfwd(self.jax_cost)(pk) # this is much faster than jax.grad
         #return jnp.real( grad(self.jax_cost_jit)(pk) )        
 
     def step_jax_cost_vect(self,ik,arg0):

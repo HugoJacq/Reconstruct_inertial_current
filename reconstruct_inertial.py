@@ -46,8 +46,8 @@ start = clock.time()
 ###############################################
 # //
 DASHBOARD   = False   # when using dask
-N_CPU       = 12          # when using joblib, if >1 then use // code
-JAXIFY      = False      # whether to use JAX or not
+N_CPU       = 1          # when using joblib, if >1 then use // code
+JAXIFY      = True      # whether to use JAX or not
 
 # -> area of interest
 # -> index for spatial location. We work in 1D
@@ -80,8 +80,8 @@ PRINT_INFO = False                  # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = False     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+ONE_LAYER_COST_MAP      = True     # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
 
@@ -147,7 +147,8 @@ files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
 
 
 
-    
+
+
 # MAIN LOOP
 # This avoids infinite subprocess creation
 if __name__ == "__main__":  
@@ -369,16 +370,16 @@ if __name__ == "__main__":
         print('-> time for J = ',np.round(t2 - t1,4) )
         print('-> time for dJ = ',np.round(clock.time() - t2,4) )
 
-        # t1 = clock.time()
-        # J = var.cost(vector_k)
-        # print('J',J)
-        # t2 = clock.time()
-        # dJ = var.grad_cost(vector_k)
-        # print('dJ',dJ)
-        # print('-> time for J = ',np.round(t2 - t1,4) )
-        # print('-> time for dJ = ',np.round(clock.time() - t2,4) )
+        t1 = clock.time()
+        J = var.cost(vector_k)
+        print('J',J)
+        t2 = clock.time()
+        dJ = var.grad_cost(vector_k)
+        print('dJ',dJ)
+        print('-> time for J = ',np.round(t2 - t1,4) )
+        print('-> time for dJ = ',np.round(clock.time() - t2,4) )
         
-        # raise Exception
+        raise Exception
         if PARALLEL_MINIMIZED:
             if JAXIFY:
                 raise Exception('STOP: // minimize with JAX is not yet available.')
@@ -666,10 +667,13 @@ if __name__ == "__main__":
         else:
             if N_CPU>1:
                 # joblib //
-                J = Parallel(n_jobs=N_CPU)(delayed(
-                    var.cost)(np.array([k0,k1,k2,k3]))
-                        for k1 in tested_values for k2 in tested_values)
-                J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+                # not working if some jax is in the file ...
+                print(model.isJax)
+                print(var.inJax)
+                # J = Parallel(n_jobs=N_CPU)(delayed(
+                #     var.cost)(np.array([k0,k1,k2,k3]))
+                #         for k1 in tested_values for k2 in tested_values)
+                # J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
             else:
                 # serial
                 J = np.zeros((len(tested_values),len(tested_values)))*np.nan
