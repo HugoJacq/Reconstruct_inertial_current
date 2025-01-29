@@ -22,9 +22,15 @@ from optimparallel import minimize_parallel
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 from matplotlib import ticker as mticker
+import jax.numpy as jnp
+import jax
+jax.config.update("jax_enable_x64", True)
+# jax.config.update('jax_platform_name', 'cpu')
+
+
 
 # custom imports
-from build_LS_fields import *
+from OSSE import *
 from observations import *
 from forcing import *
 from unstek import *
@@ -39,9 +45,9 @@ start = clock.time()
 # PARAMETERS                                  #
 ###############################################
 # //
-DASHBOARD = False   # when using dask
-N_CPU = 12          # when using joblib, if >1 then use // code
-JAXIFY = True      # whether to use JAX or not
+DASHBOARD   = False   # when using dask
+N_CPU       = 12          # when using joblib, if >1 then use // code
+JAXIFY      = False      # whether to use JAX or not
 
 # -> area of interest
 # -> index for spatial location. We work in 1D
@@ -50,7 +56,7 @@ point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
  
 
 # -> Observations : OSSE
-SOURCE = 'Croco'                   # MITgcm Croco
+SOURCE = 'MITgcm'                   # MITgcm Croco
 TRUE_WIND_STRESS = True             # whether to use Cd.U**2 or Tau
 dt = 60                             # timestep of the model (s) 
 period_obs = 86400                  # s, how many second between observations
@@ -58,8 +64,9 @@ period_obs = 86400                  # s, how many second between observations
 # -> LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
-vector_k = np.array([-3.,-12.]) # [-3,-12]         # 1 layers
-#vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
+#        enter float values !!
+#vector_k = np.array([-3.,-12.]) # [-3,-12]         # 1 layers
+vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
 MINIMIZE = True
@@ -73,8 +80,8 @@ PRINT_INFO = False                  # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = True     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
+ONE_LAYER_COST_MAP      = False     # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
 
@@ -349,10 +356,11 @@ if __name__ == "__main__":
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
         print('* Minimization with '+str(Nl)+' layers')
-        t1 = clock.time()
+        
         _, Ca = model.do_forward(vector_k)
         Ua, Va = jnp.real(Ca), jnp.imag(Ca)
-            
+        
+        t1 = clock.time()
         J = var.cost(vector_k)
         print('J',J)
         t2 = clock.time()
@@ -360,7 +368,17 @@ if __name__ == "__main__":
         print('dJ',dJ)
         print('-> time for J = ',np.round(t2 - t1,4) )
         print('-> time for dJ = ',np.round(clock.time() - t2,4) )
+
+        # t1 = clock.time()
+        # J = var.cost(vector_k)
+        # print('J',J)
+        # t2 = clock.time()
+        # dJ = var.grad_cost(vector_k)
+        # print('dJ',dJ)
+        # print('-> time for J = ',np.round(t2 - t1,4) )
+        # print('-> time for dJ = ',np.round(clock.time() - t2,4) )
         
+        # raise Exception
         if PARALLEL_MINIMIZED:
             if JAXIFY:
                 raise Exception('STOP: // minimize with JAX is not yet available.')
@@ -525,10 +543,10 @@ if __name__ == "__main__":
         PLOT_ITERATIONS = False
         kmin = -15
         kmax = 0
-        step = 1 #0.25
+        step = 0.25
         maxiter = 10
         vector_k = np.array([-12,-12]) # initial vector k
-        Nl = 1
+        Nl = len(vector_k)//2
         Jmap_cmap = 'terrain'
         
         tested_values = np.arange(kmin,kmax,step)  # -15,0,0.25
@@ -540,19 +558,32 @@ if __name__ == "__main__":
             model = Unstek1D(Nl, forcing, observations)
         var = Variational(model, observations)
         
-        if N_CPU>1 and not JAXIFY:
-            J = Parallel(n_jobs=N_CPU)(delayed(
+        
+        if JAXIFY:
+            # Vectorized
+            jtested_values = jnp.asarray(tested_values)
+            array_pk = jnp.asarray( [ [k0,k1] for k0 in jtested_values 
+                                                for k1 in jtested_values] )
+            indexes = jnp.asarray( [ [i,j] for i in jnp.arange(len(jtested_values)) 
+                                             for j in jnp.arange(len(jtested_values))] )
+            J = var.jax_cost_vect(array_pk, indexes)
+            
+        else:
+            if N_CPU>1:
+                # joblib //
+                J = Parallel(n_jobs=N_CPU)(delayed(
                     var.cost)(np.array([k0,k1]))
                         for k0 in tested_values for k1 in tested_values)
-            J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
-        else:
-            J = np.zeros((len(tested_values),len(tested_values)))*np.nan
-            for i,k0 in enumerate(tested_values):
-                print(i)
-                for j,k1 in enumerate(tested_values):
-                    print('     ',j)
-                    vector_k0k1 = np.array([k0,k1])
-                    J[j,i] = var.cost(vector_k0k1)
+                J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+            else:
+                # serial
+                J = np.zeros((len(tested_values),len(tested_values)))*np.nan
+                for i,k0 in enumerate(tested_values):
+                    print(i)
+                    for j,k1 in enumerate(tested_values):
+                        print('     ',j)
+                        vector_k0k1 = np.array([k0,k1])
+                        J[j,i] = var.cost(vector_k0k1)
         
         # plotting iterations of minimization
         if PLOT_ITERATIONS:
@@ -601,7 +632,7 @@ if __name__ == "__main__":
             cost function value : 0.24744266411643656
         """
         PARALLEL = True
-        step = 0.25
+        step = 1 # 0.25
         Jmap_cmap = 'terrain'
         if TRUE_WIND_STRESS:
             k0 = -9.14721791
@@ -618,20 +649,48 @@ if __name__ == "__main__":
         
         tested_values = np.arange(kmin,kmax,step)
         Nl = 2
-        model = Unstek1D(Nl, forcing, observations)
+        if JAXIFY: model = jUnstek1D(Nl, forcing, observations)
+        else: model = Unstek1D(Nl, forcing, observations)
         var = Variational(model, observations)
     
-        if N_CPU>1:
-            J = Parallel(n_jobs=N_CPU)(delayed(
-                    var.cost)(np.array([k0,k1,k2,k3]))
-                                    for k1 in tested_values for k2 in tested_values)
-            J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+    
+        if JAXIFY:
+            # Vectorized
+            jtested_values = jnp.asarray(tested_values)
+            array_pk = jnp.asarray( [ [k0,k1,k2,k3] for k1 in jtested_values 
+                                                for k2 in jtested_values] )
+            indexes = jnp.asarray( [ [i,j] for i in jnp.arange(len(jtested_values)) 
+                                             for j in jnp.arange(len(jtested_values))] )
+            J = var.jax_cost_vect(array_pk, indexes)
+            
         else:
-            J = np.zeros((len(tested_values),len(tested_values)))
-            for i,k1 in enumerate(tested_values):
-                for j,k2 in enumerate(tested_values):
-                    vector_k = np.array([k0,k1,k2,k3])
-                    J[j,i] = var.cost(vector_k)
+            if N_CPU>1:
+                # joblib //
+                J = Parallel(n_jobs=N_CPU)(delayed(
+                    var.cost)(np.array([k0,k1,k2,k3]))
+                        for k1 in tested_values for k2 in tested_values)
+                J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+            else:
+                # serial
+                J = np.zeros((len(tested_values),len(tested_values)))*np.nan
+                for i,k1 in enumerate(tested_values):
+                    print(i)
+                    for j,k2 in enumerate(tested_values):
+                        print('     ',j)
+                        vector_k0k1 = np.array([k0,k1,k2,k3])
+                        J[j,i] = var.cost(vector_k0k1)
+    
+        # if N_CPU>1:
+        #     J = Parallel(n_jobs=N_CPU)(delayed(
+        #             var.cost)(np.array([k0,k1,k2,k3]))
+        #                             for k1 in tested_values for k2 in tested_values)
+        #     J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
+        # else:
+        #     J = np.zeros((len(tested_values),len(tested_values)))
+        #     for i,k1 in enumerate(tested_values):
+        #         for j,k2 in enumerate(tested_values):
+        #             vector_k = np.array([k0,k1,k2,k3])
+        #             J[j,i] = var.cost(vector_k)
         
         # plotting
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)

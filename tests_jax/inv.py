@@ -13,7 +13,8 @@ import chex
 import time as clock
 import jaxopt
 
-
+gpu_device = jax.devices('gpu')[0]
+cpu_device = jax.devices('cpu')[0]
 
 def value_and_grad_jvp(f):   
     return lambda x: ( f(x), jax.jacfwd(f)(x) )
@@ -44,14 +45,16 @@ class Variational:
         self.G = []
 
         # JAX
-        self.jax_grad_cost_jit = jit(self.jax_grad_cost)
+        self.jax_grad_cost_jit = jit(self.jax_grad_cost, device=gpu_device) # faster on gpu
         self.jax_cost_jit = jit(self.jax_cost)
+        #self.jax_cost_vect_jit = jit(self.jax_cost_vect, device=cpu_device) # faster on cpu
+        self.step_jax_cost_vect_jit = jit(self.step_jax_cost_vect, device=gpu_device) 
         
         #self.run_opt_jit = jit(self.run_opt)   
-        
         #self.my_opt_jit = jit(self.my_opt)
 
   
+    # NO JAX
     def nojax_cost(self, pk):
         """
         Computes the cost function of reconstructed current vs observations
@@ -94,7 +97,7 @@ class Variational:
 
         return - dJ_pk
     
-      
+    # JAX
     def jax_cost(self, pk):
         """
         Computes the cost function of reconstructed current vs observations
@@ -121,7 +124,7 @@ class Variational:
         # here use lax.cond 
         # to detect if nan like 'nojax_grad_cost'
         #jax.debug.print('inside minimize J = {}', J)
-        return J
+        return J 
  
     def jax_grad_cost(self, pk):        
         """
@@ -130,9 +133,45 @@ class Variational:
         #return grad(self.jax_cost_jit)(pk) # this is much slower than jax.jacfwd
         return jax.jacfwd(self.jax_cost_jit)(pk) # this is much faster than jax.grad
         #return jnp.real( grad(self.jax_cost_jit)(pk) )        
-            
-    
 
+    def step_jax_cost_vect(self,ik,arg0):
+            array_pk, indexes, J = arg0
+            vector_k = array_pk[ik]
+            i,j = indexes[ik][0],indexes[ik][1]
+            #jax.debug.print('ik, vector: {}, {}',ik,vector_k)
+            J = J.at[i,j].set( self.jax_cost(vector_k) )
+            return array_pk, indexes, J  
+        
+    def jax_cost_vect(self, array_pk, indexes):
+        """
+        Vectorized version of 'jax_cost'
+
+        INPUT:
+            - array_pk : A 2D array with:
+                    axis=0 the number of pk vector tested
+                    axis=1 the individual pk vector, can be N dimension (tested with 2)
+                    
+                    example:
+                    
+                    array_pk = jnp.asarray( [ [k0,k1] for k0 in jtested_values for k1 in jtested_values] )
+                    
+                    if you want to test values for a bigger than len(vector_k)=2, you can only change 2 values 
+                    to be plotable...
+        OUTPUT:
+            -        
+        """
+        N, _ = jnp.shape(array_pk) # squared number of vector k, size of vector k
+        Nchange = 2 # number of component of vector k that change
+        
+        sizeN = jnp.sqrt(array_pk.shape[0]).astype(int)
+        Jshape = tuple([sizeN]*Nchange)
+        J = jnp.zeros( Jshape )
+        
+        arg0 = array_pk, indexes, J
+        _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit,arg0)
+        return J.transpose()
+    
+    # COMMON WRAPPER
     def cost(self, pk, save_iter=False):
         if self.inJax:
             J = self.jax_cost_jit(pk)
@@ -156,7 +195,7 @@ class Variational:
     
     
     
-    # minimization with jax
+    # minimization with jax, WIP
     def print_info(self):
         def init_fn(params):
             del params
@@ -175,8 +214,7 @@ class Variational:
 
         return optax.GradientTransformationExtraArgs(init_fn, update_fn)
     
-
-        
+ 
     def my_opt(self, X0, opt, max_iter):
         # trying to do my own minimizer, not working for now
         def step_my_opt(self, carry):

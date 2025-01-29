@@ -123,3 +123,5 @@ png_1D/MITgcm/LON-24.8_LAT45.2/stress_UU/JAX_series_reconstructed_long_2layers_w
 png_1D/MITgcm/LON-24.8_LAT45.2/stress_UU/JAX_series_reconstructed_long_2layers.png
 png_1D/MITgcm/LON-24.8_LAT45.2/stress_UU/series_reconstructed_long_2layers_withMLD.png
 save_script/diag_freq.ipynb
+__pycache__/OSSE.cpython-310.pyc
+png_1D/Croco/LON-50.0_LAT35.0/stress_Tau/JAX_k1k2_J_2layer.png
