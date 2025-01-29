@@ -80,8 +80,8 @@ PRINT_INFO = False                  # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = True     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
+ONE_LAYER_COST_MAP      = False     # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 # note: i need to tweak score_PSD with rotary spectra
 

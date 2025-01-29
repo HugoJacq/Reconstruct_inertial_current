@@ -47,7 +47,8 @@ class Variational:
         self.jax_grad_cost_jit = jit(self.jax_grad_cost, device=gpu_device) # faster on gpu
         self.jax_cost_jit = jit(self.jax_cost, device=gpu_device)
         #self.jax_cost_vect_jit = jit(self.jax_cost_vect, device=cpu_device) # faster on cpu
-        self.step_jax_cost_vect_jit = jit(self.step_jax_cost_vect, device=gpu_device) 
+        self.step_jax_cost_vect_jit_gpu = jit(self.step_jax_cost_vect, device=gpu_device) 
+        self.step_jax_cost_vect_jit_cpu = jit(self.step_jax_cost_vect, device=cpu_device) 
         
         #self.run_opt_jit = jit(self.run_opt)   
         #self.my_opt_jit = jit(self.my_opt)
@@ -159,15 +160,19 @@ class Variational:
         OUTPUT:
             -        
         """
-        N, _ = jnp.shape(array_pk) # squared number of vector k, size of vector k
+        N, Nl2 = jnp.shape(array_pk) # squared number of vector k, size of vector k
         Nchange = 2 # number of component of vector k that change
+        Nl = jnp.sqrt(Nl2)
         
         sizeN = jnp.sqrt(array_pk.shape[0]).astype(int)
         Jshape = tuple([sizeN]*Nchange)
         J = jnp.zeros( Jshape )
         
         arg0 = array_pk, indexes, J
-        _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit,arg0)
+        if Nl<2:
+            _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit_cpu,arg0)
+        else:
+            _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit_gpu,arg0)
         return J.transpose()
     
     # COMMON WRAPPER
