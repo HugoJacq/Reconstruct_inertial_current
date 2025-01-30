@@ -56,20 +56,19 @@ point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
  
 
 # -> Observations : OSSE
-SOURCE = 'MITgcm'                   # MITgcm Croco
-TRUE_WIND_STRESS = True             # whether to use Cd.U**2 or Tau
-dt = 60                             # timestep of the model (s) 
-period_obs = 86400                  # s, how many second between observations
+SOURCE              = 'Croco'          # MITgcm Croco
+TRUE_WIND_STRESS    = True             # whether to use Cd.U**2 or Tau
+dt                  = 60                # timestep of the model (s) 
+period_obs          = 86400             # s, how many second between observations
 
 # -> LAYER DEFINITION
 #        number of values = number of layers
 #        values = turbulent diffusion coefficient
 #        enter float values !!
-#vector_k = np.array([-3.,-12.]) # [-3,-12]         # 1 layers
-vector_k=np.array([-3.,-8.,-10.,-12.])    # 2 layers
+#vector_k = np.array([-9.,-11.]) # [-3,-12]         # 1 layers
+vector_k=np.array([-9.,-10.,-11.,-12.])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-MINIMIZE = True
 PRINT_INFO = False                  # only if PARALLEL_MINIMIZED
 save_iter = False                   # save iteration during minimize
 maxiter = 100                       # max iteration of minimization
@@ -78,11 +77,12 @@ PRINT_INFO = False                  # show info during minimization
 
 # -> ANALYSIS   
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
-MINIMIZE                = False     # find the vector K starting from 'pk'
+MINIMIZE                = True     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
-LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
+LINK_K_AND_PHYSIC       = True     # link the falues of vector K with physical variables
+TEST_ROTARY_SPECTRA     = False
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -103,6 +103,31 @@ files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025
 # -> list of save path
 path_save_interp1D = './'           # where to save interpolated (on model dt) currents
 
+dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
+                                        {
+                                        '1':{'TRUE_TAU'  :[-9.39170447, -9.21727385],
+                                            #'Cd.UU'     :[-3.61193207, -9.43221744], 
+                                            'Cd.UU'     :[-8.44024616, -9.43221639],
+                                            
+                                            },
+                                        '2':{'TRUE_TAU'  :[-9.11293915, -8.73891447, -11.15877101, -12.56505214],
+                                            #'Cd.UU'     :[-3.43410747, -9.06351441, -11.31084862, -12.47553802]
+                                            'Cd.UU'     :[-8.26241066,  -9.06349461, -11.31082486, -12.47552063]
+                                            } 
+                                        }
+                                    },
+                   'Croco':{ '[-50.0, 35.0]':
+                                        {
+                                        '1':{'TRUE_TAU'  :[-11.31980127, -10.28525189]
+                                             },
+                                        '2':{'TRUE_TAU'  :[-10.76035344, -9.3901326, -10.61707124, -12.66052074]
+                                             }
+                                        }
+                                     } 
+                            }
+
+
+
 # END PARAMETERS #################################
 ##################################################
 if SOURCE=='Crocco':
@@ -111,16 +136,18 @@ if JAXIFY:
     nameJax = 'JAX_'
 else:
     nameJax = ''
-
+if SOURCE=='Croco':
+    TRUE_WIND_STRESS = True
+    
 point_loc = point_loc_source[SOURCE]
 
 print('')
 print('*********************************')
-print('* SOURCE = '+SOURCE)
-print('* MODE = 1D')
+print('* SOURCE     = '+SOURCE)
+print('* MODE       = 1D')
 print('*    LOCATION [W,E]= '+str(point_loc))
 print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
-print('* JAXIFY = '+str(JAXIFY))
+print('* JAXIFY     = '+str(JAXIFY))
 print('*********************************')
 print('')
 # where to save pngs for 1D study
@@ -183,13 +210,7 @@ if __name__ == "__main__":
     Uo,Vo = observations.get_obs()
     U, V = forcing.U, forcing.V
     
-    # intialisation of the model
-    Nl = len(vector_k)//2
-    if JAXIFY:
-        model = jUnstek1D(Nl, forcing, observations)
-    else:
-        model = Unstek1D(Nl, forcing, observations)
-    var = Variational(model, observations)
+    
         
     # INVERSE PROBLEM
     # verification of tangeant linear func with adjoint.
@@ -356,10 +377,18 @@ if __name__ == "__main__":
         
     # minimization procedure of the cost function (n layers)
     if MINIMIZE:
+        Nl = len(vector_k)//2
         print('* Minimization with '+str(Nl)+' layers')
         
-        _, Ca = model.do_forward(vector_k)
-        Ua, Va = jnp.real(Ca), jnp.imag(Ca)
+        # intialisation of the model
+        if JAXIFY:
+            model = jUnstek1D(Nl, forcing, observations)
+        else:
+            model = Unstek1D(Nl, forcing, observations)
+        var = Variational(model, observations)
+        
+        # _, Ca = model.do_forward(vector_k)
+        # Ua, Va = jnp.real(Ca), jnp.imag(Ca)
         
         t1 = clock.time()
         J = var.cost(vector_k)
@@ -379,7 +408,6 @@ if __name__ == "__main__":
         print('-> time for J = ',np.round(t2 - t1,4) )
         print('-> time for dJ = ',np.round(clock.time() - t2,4) )
         
-        raise Exception
         if PARALLEL_MINIMIZED:
             if JAXIFY:
                 raise Exception('STOP: // minimize with JAX is not yet available.')
@@ -437,7 +465,7 @@ if __name__ == "__main__":
         ax[0].legend(loc=1)
         ax[1].plot(forcing.time/86400, - forcing.MLD, c='k')
         ax[1].set_xlabel('Time (days)')
-        ax[1].set_ylabel('MLD (m)')
+        ax[1].set_ylabel('Ekman depth (m)')
         fig.savefig(path_save_png1D+nameJax+'series_reconstructed_long_'+str(Nl)+'layers_withMLD.png')
       
     # Plotting trajectories of given vector_k
@@ -544,7 +572,7 @@ if __name__ == "__main__":
         PLOT_ITERATIONS = False
         kmin = -15
         kmax = 0
-        step = 0.25
+        step = 1
         maxiter = 10
         vector_k = np.array([-12,-12]) # initial vector k
         Nl = len(vector_k)//2
@@ -728,52 +756,131 @@ if __name__ == "__main__":
                 if needed, ghost point
         
         1 layer: 
-            A0 = 1 / (H)
+            A0 = 1 / (rho*H)
             A1 = A0*Kz1 / H
             
-            H = 1/ (A0)
+            H = 1/ (rho*A0)
             Kz0 = A1*h/A0
             
         2 layers:
-            A0 = 1/(H1)
-            A1 = Kz0 / (H1) * 2/(H1+H2) = A0.2/(H1+H2)
-            A2 = Kz1 / .H2**2)
-            A3 = Kz1 / .H2) * 2/(H1+H2) = A2.2/(H1+H2)        
+            A0 = 1/(H1*rho)
+            A1 = Kz1 / (rho*H1) * 2/(H1+H2) = A0*2*Kz1/(H1+H2)
+            A2 = Kz2 / (rho*H2**2)
+            A3 = Kz2 / (rho*H2) * 2/(H1+H2) = H2*A2.2/(H1+H2)        
             
-            H1 = 1/A[0]
+            H1 = 1/(A[0]*rho)
             H2 = H1*1/(A[2]/A[3]-1)
             Kz1 = A[1]/(2*A[0])*(H1+H2)
-            Kz2 = A[2]*H2**2
-        
+            Kz2 = A[2]*rho*H2**2
+            
+        TO DO: 
+            Save a text file with all the informations
         """
-    
+        print('* Link vector_k and physic')
+        if TRUE_WIND_STRESS:
+            txt_dico = 'TRUE_TAU'
+        else:
+            txt_dico = 'Cd.UU'  
+        rhow = rho
+        
         # 1 layer
-        pk = [-3.61402696, -9.44992617]
+        Nl = '1'
+        pk = dico_pk_solution[SOURCE][str(point_loc)][Nl][txt_dico]
         K = np.exp(pk)
-
-        H = 1/ (K[0])
+        H = 1/ (rhow*K[0])
         Kz0 = K[1]*H**2
         print(' -> 1 layer')
-        print('     MLD=',H,'m')
+        print('     pk=',pk)
+        print('     Ekman depth=',H,'m')
         print('     K=',Kz0,'m2/s')     
         
         # 2 layers
-        pk = [-3.45553431 , -9.10956862, -11.36951323, -12.49796094]
+        Nl = '2'
+        pk = dico_pk_solution[SOURCE][str(point_loc)][Nl][txt_dico]
         K = np.exp(pk)
-        H1 = 1/(K[0])
+        H1 = 1/(K[0]*rhow)
         H2 = H1*1/(K[2]/K[3]-1)
         Kz1 = K[1]/(2*K[0])*(H1+H2)
-        Kz2 = K[2]  *H2**2
-        
+        Kz2 = K[2]*rhow*H2**2
         print(' -> 2 layers')
+        print('     pk=',pk)
         print('     H1',H1,'m')
         print('     H2',H2,'m')
-        print('     MLD=',H1+H2,'m')
+        print('     Ekman depth=',H1+H2,'m')
         print('     K1=',Kz1,'m2/s')
         print('     K2=',Kz2,'m2/s')
         
+    if TEST_ROTARY_SPECTRA:
         
+        # pour l'instant je le fait en 1D à 1 point lat,lon donc le spectre est bruité.
+        print(' * Plotting rotary spectra')
+        vector_k = np.asarray([-9.11293915, -8.73891447, -11.15877101, -12.56505214])
+        Nl = len(vector_k)//2
         
+        if JAXIFY:
+            vector_k = jnp.asarray(vector_k)
+            model = jUnstek1D(Nl, forcing, observations)
+        else:
+            model = Unstek1D(Nl, forcing, observations)
+        var = Variational(model, observations)
+        
+        # real data
+        _, Ca = model.do_forward(vector_k)
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
+        Ur, Vr = U[::dt],V[::dt]
+        Ua, Va = Ua[::dt],Va[::dt]
+        # synthetic data
+        Ur = U[2*dt::dt].copy()
+        Vr = V[2*dt::dt].copy()
+        Ua = 1*U[:-2*dt:dt]
+        Va = 1*V[:-2*dt:dt]
+        
+        fig, axs = plt.subplots(1,1,figsize=(7,6))
+        axs.plot(Ur)
+        axs.plot(Ua)
+        plt.show()
+        
+        dtH = 1. # 1 hour
+        ff, MPr2, MPr1, MPe2, MPe1 = rotary_spectra(dtH,Ua,Va,Ur,Vr)
+        
+        fig, axs = plt.subplots(2,1,figsize=(7,6), gridspec_kw={'height_ratios': [4, 1.5]})
+        axs[0].loglog(ff,MPr2, c='k', label='reference')
+        axs[0].loglog(ff,MPe2, c='b', label='error')
+        axs[0].axis([2e-3,2e-1, 1e-4,10])
+        axs[0].grid('on', which='both')
+        plt.xlabel('hours-1')
+        axs[0].legend()
+        axs[0].title.set_text('Clockwise PSD first layer', )
+        axs[1].semilogx(ff,(1-MPe2/MPr2)*100, c='b', label='Reconstruction Score')
+        axs[1].axis([2e-3,2e-1,0,100])
+        axs[1].grid('on', which='both')
+        axs[1].title.set_text('Scores (%)')
+        #plt.savefig('diag.png')  
+        
+        fig, axs = plt.subplots(2,1,figsize=(7,6), gridspec_kw={'height_ratios': [4, 1.5]})
+        axs[0].loglog(ff,MPr1, c='k', label='reference')
+        axs[0].loglog(ff,MPe1, c='b', label='error')
+        axs[0].axis([2e-3,2e-1, 1e-4,2e0])
+        axs[0].grid('on', which='both')
+        plt.xlabel('hours-1')
+        axs[0].legend()
+        axs[0].title.set_text('Counter-Clockwise PSD 15m', )
+        axs[1].semilogx(ff,(1-MPe1/MPr1)*100, c='b', label='Reconstruction Score')
+        axs[1].axis([2e-3,2e-1,0,100])
+        axs[1].grid('on', which='both')
+        axs[1].title.set_text('Scores (%)')
+        #plt.savefig('diag.png')
+        
+    # TO DO:
+    # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
+    # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
+    # - préparation modèle 2D: modele 1D appliqué à une grille 5°/5°
+    # - rotary spectra sur un grand domaine spatial pour meilleur convergence
+    # - télécharger fichier janvier Croco (et fichier été ?)
+    # - ekman depth vs MLD: comparer (1D, f(time) )
+    #       model simple 2 couches avec K obtenu par minimization
+    #       model simple 100 couchse avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
+    #       model 3D: MLD basé sur gradient de densité
     
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')

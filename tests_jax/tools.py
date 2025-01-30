@@ -4,6 +4,7 @@ Tool module for "reconstruct_inertial.py"
 from math import factorial
 import scipy as sp
 import numpy as np
+from scipy.fftpack import fft
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.
@@ -148,3 +149,75 @@ def find_indices(points,lon,lat,tree=None):
     dist,idx = tree.query(points,k=1)
     ind = np.column_stack(np.unravel_index(idx,lon.shape))
     return [(i,j) for i,j in ind]
+
+
+def psd1d(hh,dx=1.,tap=0.05, detrend=True):
+	"""
+ 	1D PSD of real or complex array 'hh'	
+ 	"""
+
+	hh=hh-np.mean(hh)
+	nx=np.shape(hh)[0]
+
+	if detrend:
+		hh=sp.signal.detrend(hh)
+
+	if tap>0:  
+		ntaper = int(tap * nx + 0.5)
+		taper = np.zeros(nx)+1.
+		taper[:ntaper]=np.cos(np.arange(ntaper)/(ntaper-1.)*np.pi/2+3*np.pi/2)
+		taper[-ntaper:] = np.cos(-np.arange(-ntaper+1,1)/(ntaper-1.)*np.pi/2+3*np.pi/2)
+		hh=hh*taper
+
+	ss=fft(hh)
+	ff=np.arange(1,nx/2-1)/(nx*dx)
+
+	PSD=2*dx/(nx)*np.abs(ss[1:int(nx/2-1)])**2
+
+	return ff, PSD
+
+def rotary_spectra(dt,Ua,Va,U,V):
+	"""
+	Computes the clockwise and counter clockwise spectra
+	INPUT:
+		- Ua,Va : estimated currents (1D)
+		- U,V : True currents (1D)
+	OUTPUT:
+		- frequency array
+		- tuple of 4 (MPr2,Mpr1,MPe2,MPe1):
+			- counter clockwise and clockwise spectra of truth
+			- counter clockwise and clockwise spectra of estimate
+	"""
+	nt = U.shape[0]
+	nf = 200
+	print(nt,nf)
+	count = 0
+	ensit = np.arange(0,nt-nf,int(nf/2))
+	for it in ensit:
+		ff,Pr1 = psd1d(U[it:it+nf]+1j*V[it:it+nf],dx=dt, detrend=True, tap=0.2)
+		ff,Pr2 = psd1d(U[it:it+nf]-1j*V[it:it+nf],dx=dt, detrend=True, tap=0.2)
+	if count==0:
+		MPr1 = +Pr1
+		MPr2 = +Pr2
+	else:
+		MPr1 += Pr1
+		MPr2 += Pr2 
+
+
+	ff, Pe1 = psd1d((Ua[it:it+nf]-U[it:it+nf]) +1j* (Va[it:it+nf]-V[it:it+nf]) ,dx=dt, detrend=True, tap=0.2)
+	ff, Pe2 = psd1d((Ua[it:it+nf]-U[it:it+nf]) -1j* (Va[it:it+nf]-V[it:it+nf]) ,dx=dt, detrend=True, tap=0.2)
+	if count==0:
+		MPe1 = +Pe1
+		MPe2 = +Pe2
+	else:
+		MPe1 += Pe1
+		MPe2 += Pe2 
+
+
+	count += 1
+	MPr1 /= count
+	MPr2 /= count
+	MPe1 /= count
+	MPe2 /= count
+	return ff, MPr2, MPr1, MPe2, MPe1
+    

@@ -275,8 +275,8 @@ def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='
     if model_source.source == 'MITgcm':
         gTx = ds_i.geo5_u10m
         gTy = ds_i.geo5_v10m
-        gTAx = 8e-6*np.sign(gTx)*gTx**2
-        gTAy = 8e-6*np.sign(gTy)*gTy**2
+        gTAx = 1e-3*np.sign(gTx)*gTx**2 # Tau/rho = Cd*U**2 :  CD~1e-3
+        gTAy = 1e-3*np.sign(gTy)*gTy**2
         ds_i['TAx'] = (ds_i.geo5_u10m.dims,
                             gTAx.data,
                             {'standard_name':'eastward_wind_stress_from_CdUU',
