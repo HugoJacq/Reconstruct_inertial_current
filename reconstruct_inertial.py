@@ -45,8 +45,8 @@ start = clock.time()
 # PARAMETERS                                  #
 ###############################################
 # //
-DASHBOARD   = False   # when using dask
-N_CPU       = 1          # when using joblib, if >1 then use // code
+DASHBOARD   = False     # when using dask
+N_CPU       = 1         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
 
 # -> area of interest
@@ -56,10 +56,10 @@ point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
  
 
 # -> Observations : OSSE
-SOURCE              = 'Croco'          # MITgcm Croco
-TRUE_WIND_STRESS    = True             # whether to use Cd.U**2 or Tau
-dt                  = 60                # timestep of the model (s) 
-period_obs          = 86400             # s, how many second between observations
+SOURCE              = 'Croco'   # MITgcm Croco
+TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
+dt                  = 60        # timestep of the model (s) 
+period_obs          = 86400     # s, how many second between observations
 
 # -> LAYER DEFINITION
 #        number of values = number of layers
@@ -69,20 +69,21 @@ period_obs          = 86400             # s, how many second between observatio
 vector_k=np.array([-9.,-10.,-11.,-12.])    # 2 layers
 
 # -> MINIMIZATION OF THE UNSTEADY EKMAN MODEL
-PRINT_INFO = False                  # only if PARALLEL_MINIMIZED
-save_iter = False                   # save iteration during minimize
-maxiter = 100                       # max iteration of minimization
-PARALLEL_MINIMIZED = False          # there is a bug with TRUE
-PRINT_INFO = False                  # show info during minimization
+PRINT_INFO              = False     # only if PARALLEL_MINIMIZED
+save_iter               = False     # save iteration during minimize
+maxiter                 = 100       # max iteration of minimization
+PARALLEL_MINIMIZED      = False     # there is a bug with TRUE
+PRINT_INFO              = False     # show info during minimization
 
 # -> ANALYSIS   
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
-MINIMIZE                = True     # find the vector K starting from 'pk'
+MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
-LINK_K_AND_PHYSIC       = True     # link the falues of vector K with physical variables
+LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 TEST_ROTARY_SPECTRA     = False
+TEST_JUNSTEK1D_KT       = True      
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -106,12 +107,10 @@ path_save_interp1D = './'           # where to save interpolated (on model dt) c
 dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
                                         {
                                         '1':{'TRUE_TAU'  :[-9.39170447, -9.21727385],
-                                            #'Cd.UU'     :[-3.61193207, -9.43221744], 
                                             'Cd.UU'     :[-8.44024616, -9.43221639],
                                             
                                             },
                                         '2':{'TRUE_TAU'  :[-9.11293915, -8.73891447, -11.15877101, -12.56505214],
-                                            #'Cd.UU'     :[-3.43410747, -9.06351441, -11.31084862, -12.47553802]
                                             'Cd.UU'     :[-8.26241066,  -9.06349461, -11.31082486, -12.47552063]
                                             } 
                                         }
@@ -171,9 +170,6 @@ files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) +
                                     list(files_dict['MITgcm']['filesD']) + 
                                     list(files_dict['MITgcm']['filesTau']) )
 files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
-
-
-
 
 
 # MAIN LOOP
@@ -870,6 +866,50 @@ if __name__ == "__main__":
         axs[1].grid('on', which='both')
         axs[1].title.set_text('Scores (%)')
         #plt.savefig('diag.png')
+       
+    if TEST_JUNSTEK1D_KT:
+        """
+        Tests of class jUnstek1D_Kt
+        """   
+        dT = 4*86400 # s
+        vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        
+        NdT = forcing.time[-1]//dT + 1
+        vector_kt = jnp.array( [vector_k]*NdT)
+        print('vector_kt.shape',vector_kt.shape)
+        
+        model = jUnstek1D_Kt(Nl=1, forcing=forcing, observations=observations, dT=dT)
+        var = Variational(model, observations)
+        
+        _, Ca = model.do_forward(vector_kt)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        
+        res = opt.minimize(var.cost, vector_k, args=(save_iter), # , args=(Uo, Vo, Ri)
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
+            
+        if np.isnan(var.cost(res['x'])): # , Uo, Vo, Ri
+            print('The model has crashed.')
+        else:
+            print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+            print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
+        vector_kt = res['x']
+        _, Ca = model.do_forward(vector_kt)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        
+        # PLOT trajectory
+        plt.figure(figsize=(10,3),dpi=dpi)
+        plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
+        plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
+        plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+        #plt.title(title)
+        plt.xlabel('Time (days)')
+        plt.ylabel('Ageo zonal current (m/s)')
+        plt.legend(loc=1)
+        plt.tight_layout()
+        
+        
         
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
