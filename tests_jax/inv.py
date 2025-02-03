@@ -28,7 +28,14 @@ class InfoState(NamedTuple):
     iter_num: chex.Numeric
 
 
-
+# print infos if scipy.minimize
+def print_info(cost,res):
+    if np.isnan(cost(res['x'])): # , Uo, Vo, Ri
+        print('The model has crashed.')
+    else:
+        print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+        print(' cost function value with K solution:',cost(res['x']))
+            
 class Variational:
     """
     """
@@ -47,8 +54,8 @@ class Variational:
         self.jax_grad_cost_jit = jit(self.jax_grad_cost, device=gpu_device) # faster on gpu
         self.jax_cost_jit = jit(self.jax_cost, device=gpu_device)
         #self.jax_cost_vect_jit = jit(self.jax_cost_vect, device=cpu_device) # faster on cpu
-        self.step_jax_cost_vect_jit_gpu = jit(self.step_jax_cost_vect, device=gpu_device) 
-        self.step_jax_cost_vect_jit_cpu = jit(self.step_jax_cost_vect, device=cpu_device) 
+        self.__step_jax_cost_vect_jit_gpu = jit(self.__step_jax_cost_vect, device=gpu_device) 
+        self.__step_jax_cost_vect_jit_cpu = jit(self.__step_jax_cost_vect, device=cpu_device) 
         
         #self.run_opt_jit = jit(self.run_opt)   
         #self.my_opt_jit = jit(self.my_opt)
@@ -134,7 +141,7 @@ class Variational:
         return jax.jacfwd(self.jax_cost)(pk) # this is much faster than jax.grad
         #return jnp.real( grad(self.jax_cost_jit)(pk) )        
 
-    def step_jax_cost_vect(self,ik,arg0):
+    def __step_jax_cost_vect(self,ik,arg0):
             array_pk, indexes, J = arg0
             vector_k = array_pk[ik]
             i,j = indexes[ik][0],indexes[ik][1]
@@ -170,9 +177,9 @@ class Variational:
         
         arg0 = array_pk, indexes, J
         if Nl<2:
-            _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit_cpu,arg0)
+            _, _, J = lax.fori_loop(0,N,self.__step_jax_cost_vect_jit_cpu,arg0)
         else:
-            _, _, J = lax.fori_loop(0,N,self.step_jax_cost_vect_jit_gpu,arg0)
+            _, _, J = lax.fori_loop(0,N,self.__step_jax_cost_vect_jit_gpu,arg0)
         return J.transpose()
     
     # COMMON WRAPPER
@@ -196,6 +203,7 @@ class Variational:
         if save_iter:
             self.G.append(G)
         return G.astype(float)   
+    
     
     
     

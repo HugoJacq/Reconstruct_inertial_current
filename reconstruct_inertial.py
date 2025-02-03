@@ -870,34 +870,43 @@ if __name__ == "__main__":
     if TEST_JUNSTEK1D_KT:
         """
         Tests of class jUnstek1D_Kt
-        """   
-        dT = 4*86400 # s
+        """  
+        
+        dT = 3*86400 # s
         vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
-        NdT = forcing.time[-1]//dT + 1
-        vector_kt = jnp.array( [vector_k]*NdT)
-        print('vector_kt.shape',vector_kt.shape)
-        
-        model = jUnstek1D_Kt(Nl=1, forcing=forcing, observations=observations, dT=dT)
+        Nl = len(vector_k)//2
+        model = jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)
         var = Variational(model, observations)
         
-        _, Ca = model.do_forward(vector_kt)
+        # time varying vector_k
+        vector_kt = model.kt_ini(vector_k)
+        vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
+
+        
+        t1 = clock.time()
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        t2 = clock.time()
+        print(t2-t1)
+        _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
-        res = opt.minimize(var.cost, vector_k, args=(save_iter), # , args=(Uo, Vo, Ri)
+        print( clock.time()-t2)
+        
+        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter), # , args=(Uo, Vo, Ri)
                         method='L-BFGS-B',
                         jac=var.grad_cost,
                         options={'disp': True, 'maxiter': maxiter})
             
-        if np.isnan(var.cost(res['x'])): # , Uo, Vo, Ri
-            print('The model has crashed.')
-        else:
-            print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
-            print(' cost function value with K solution:',var.cost(res['x'])) # , Uo, Vo, Ri
-        vector_kt = res['x']
-        _, Ca = model.do_forward(vector_kt)
+        print_info(var.cost,res)
+        vector_kt_1D = res['x']
+        _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
+        RMSE = score_RMSE(Ua, U) 
+        print('RMSE is',RMSE)
         # PLOT trajectory
         plt.figure(figsize=(10,3),dpi=dpi)
         plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')

@@ -238,6 +238,7 @@ class jUnstek1D_Kt:
         self.isJax = True
         # time varying K
         self.dT = dT
+        self.NdT = forcing.time[-1]//dT + 1
 
         # JIT compiled functions
         self.do_forward_jit = jit(self.do_forward)
@@ -271,7 +272,23 @@ class jUnstek1D_Kt:
         else:
             raise Exception('K_transform_reverse function '+function+' is not available, retry')
 
+    def kt_ini(self,pk):
+        return jnp.array( [pk]*self.NdT)
 
+    def kt_1D_to_2D(self,vector_kt_1D):
+        return vector_kt_1D.reshape((self.NdT,self.nl*2))
+    def kt_2D_to_1D(self,vector_kt):
+        return vector_kt.flatten()
+
+
+    def __step_pkt2Kt_matrix(self,ip, arg0):
+        gtime,gptime,S,M = arg0
+        distt = (gtime-gptime[ip])
+        tmp =  jnp.exp(-distt**2/self.dT**2)
+        S = lax.add( S, tmp )
+        M = M.at[:,ip].set( M[:,ip] + tmp )
+        return gtime,gptime,S,M
+    
     def pkt2Kt_matrix(self, gtime):
         """
         original numpy function:
@@ -321,24 +338,10 @@ class jUnstek1D_Kt:
         M = jnp.zeros((nt,npt))
         S = jnp.zeros((nt))
         
-        #fig, ax = plt.subplots(1,1,figsize = (10,10),constrained_layout=True,dpi=100)
-        #fig2, ax2 = plt.subplots(1,1,figsize = (10,10),constrained_layout=True,dpi=100)
-        for ip in range(npt):
-            distt = (gtime-gptime[ip])
-            #ax2.plot(jnp.abs(distt))
-            #iit = jnp.where((jnp.abs(distt) < (3*self.dT)))[0]
-            
-            iit1 = jnp.argmin( jnp.abs(distt- (-3*self.dT)))
-            iit2 = jnp.argmin( jnp.abs(distt - (3*self.dT)))
-            print(iit1,iit2)
-            tmp1 = distt[iit1:iit2+1] # here the shape of tmp is dynamic. I need to make it static for jit.
-            # one solution is to pad with 0 where i<iit1 and i>iit2
-            tmp = jnp.exp(-tmp1**2/self.dT**2)
-            
-            S = S.at[iit1:iit2+1].set( S[iit1:iit2+1] + tmp )
-            M = M.at[iit1:iit2+1,ip].set( M[iit1:iit2+1,ip] + tmp )
-            #ax.plot(jnp.arange(0,self.nt)*60/86400,M[:,ip])
-        #plt.show()
+        # loop over each dT
+        arg0 = gtime, gptime, S, M
+        _, _, S, M = lax.fori_loop(0, npt, self.__step_pkt2Kt_matrix, arg0)
+        
         M = (M.T / S.T).T
         return M
 
@@ -426,7 +429,6 @@ class jUnstek1D_Kt:
         
         return K, U
 
-
     def do_forward(self, pk):
         """
         Unsteady Ekman model forward model
@@ -445,19 +447,17 @@ class jUnstek1D_Kt:
                 because there is only a few layers
         """ 
         #jax.debug.print('pk = {}',pk)
-        if pk.shape[-1]//2!=self.nl:
-            raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 
         # starting from nul current
         U = jnp.zeros( (self.nl,self.nt), dtype='complex')
         K = self.K_transform(pk) # optimize inverse problem
+        K = K.reshape((self.NdT,self.nl*2))
+        if K.shape[-1]//2!=self.nl:
+           raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
+
         gtime = jnp.asarray(self.forcing_time)
         M = self.pkt2Kt_matrix(gtime=gtime)
-        #MT = M.transpose()
         Kt = jnp.dot(M,K)  
-                
-        print('K.shape',K.shape)
-        print('Kt.shape',Kt.shape)
         arg0 = Kt, U
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
