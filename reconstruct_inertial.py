@@ -38,6 +38,7 @@ from junstek import *
 from inv import *
 from tools import *
 from scores import *
+from benchmark import *
 
 start = clock.time()
 
@@ -82,8 +83,13 @@ PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
+
+# tests
 TEST_ROTARY_SPECTRA     = False
-TEST_JUNSTEK1D_KT       = True      
+TEST_JUNSTEK1D_KT       = False 
+BENCHMARK_ALL           = True
+
+    
 # note: i need to tweak score_PSD with rotary spectra
 
 # -> PLOT
@@ -918,7 +924,18 @@ if __name__ == "__main__":
         plt.legend(loc=1)
         plt.tight_layout()
         
+    if BENCHMARK_ALL:
         
+        Nl = 1
+        Nexec = 10
+        
+        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+        
+        # Junstek
+        jpk = jnp.asarray(pk)
+        model = jUnstek1D(Nl, forcing=forcing, observations=observations)
+        benchmark_forward_model(jpk, model, Nexec)
+       
         
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo

@@ -158,3 +158,6 @@ png_1D/MITgcm/LON-24.8_LAT45.2/stress_Tau/JAX_series_reconstructed_long_1layers_
 png_1D/MITgcm/LON-24.8_LAT45.2/stress_Tau/JAX_series_reconstructed_long_1layers.png
 png_1D/MITgcm/LON-24.8_LAT45.2/stress_UU/JAX_series_reconstructed_long_1layers_withMLD.png
 png_1D/MITgcm/LON-24.8_LAT45.2/stress_UU/JAX_series_reconstructed_long_1layers.png
+BENCH_jUnstek1D_benchmark_forward_model_previous.txt
+BENCH_jUnstek1D_benchmark_forward_model.txt
+__pycache__/benchmark.cpython-310.pyc
