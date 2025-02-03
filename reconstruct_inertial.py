@@ -925,17 +925,25 @@ if __name__ == "__main__":
         plt.tight_layout()
         
     if BENCHMARK_ALL:
-        
-        Nl = 1
+        print('* Benchmarking')       
         Nexec = 10
-        
-        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
-        
-        # Junstek
-        jpk = jnp.asarray(pk)
-        model = jUnstek1D(Nl, forcing=forcing, observations=observations)
-        benchmark_forward_model(jpk, model, Nexec)
        
+        # 1 layer
+        Nl = 1
+        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+        Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                    jUnstek1D(Nl, forcing=forcing, observations=observations)
+                    ]
+        benchmark_all(pk, Lmodel, observations, Nexec)
+        
+        # 2 layer
+        Nl = 2
+        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+        Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                    jUnstek1D(Nl, forcing=forcing, observations=observations)
+                    ]
+        benchmark_all(pk, Lmodel, observations, Nexec)
+        
         
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
