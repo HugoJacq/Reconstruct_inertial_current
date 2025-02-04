@@ -98,6 +98,8 @@ BENCHMARK_ALL           = False     # performance benchmark
 dpi=200
 
 # -> List of files
+
+# Local
 files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
                         'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
                         'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
@@ -108,6 +110,8 @@ files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025
                         '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                               '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
             }
+# Jackzilla
+
 
 # -> list of save path
 path_save_interp1D = './'           # where to save interpolated (on model dt) currents
