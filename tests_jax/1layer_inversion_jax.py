@@ -36,6 +36,7 @@ Recap of findings about JAX:
             lax.jacfwd is the way to go instead.
     - jit compiled function on cpu are slower than on gpu (and also slower than numpy), 
             due to differences in the cpu version of the jit compilator.
+    - for small problems, jax jit version is slower than numpy, but you get automatic differentiation...
 """
 
 
@@ -49,7 +50,7 @@ vector_k = np.array([-3.,-12.]) # 1 layer
 vector_k=np.array([-3.,-8.,-10.,-12.])
 dt = 60 # s
 
-path_file = '../Interp_1D_LON-24.8_LAT45.2.nc'
+path_file = '../MITgcm_Interp_1D_LON-24.8_LAT45.2.nc'
 TRUE_WIND_STRESS = False
 period_obs = 86400 # s, how many second between observations
 
