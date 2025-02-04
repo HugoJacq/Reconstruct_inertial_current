@@ -126,6 +126,8 @@ dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
                                         '1':{'TRUE_TAU'  :[-11.31980127, -10.28525189]
                                              },
                                         '2':{'TRUE_TAU'  :[-10.76035344, -9.3901326, -10.61707124, -12.66052074]
+                                             },
+                                        '3':{'TRUE_TAU'  :[-8,-9,-10.76035344, -9.3901326, -10.61707124, -12.66052074] # this is WIP
                                              }
                                         }
                                      } 
@@ -925,25 +927,38 @@ if __name__ == "__main__":
         plt.tight_layout()
         
     if BENCHMARK_ALL:
-        print('* Benchmarking')       
-        Nexec = 10
-       
+        print('* Benchmarking ...')       
+        Nexec = 20
+        dT = 1*86400        
+        
+        NB_LAYER = [3]
+        
         # 1 layer
-        Nl = 1
-        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
-        Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
-                    jUnstek1D(Nl, forcing=forcing, observations=observations)
-                    ]
-        benchmark_all(pk, Lmodel, observations, Nexec)
+        if 1 in NB_LAYER:
+            Nl = 1
+            pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+            Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
+            benchmark_all(pk, Lmodel, observations, Nexec)
         
         # 2 layer
-        Nl = 2
-        pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
-        Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
-                    jUnstek1D(Nl, forcing=forcing, observations=observations)
-                    ]
-        benchmark_all(pk, Lmodel, observations, Nexec)
+        if 2 in NB_LAYER:
+            Nl = 2
+            pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+            Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
+            benchmark_all(pk, Lmodel, observations, Nexec)
         
+        # 3 layer
+        if 3 in NB_LAYER:
+            Nl = 3
+            pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+            Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D(Nl, forcing=forcing, observations=observations),
+                        jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
+            benchmark_all(pk, Lmodel, observations, Nexec)
         
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo

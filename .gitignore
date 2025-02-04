@@ -163,3 +163,6 @@ BENCH_jUnstek1D_benchmark_forward_model.txt
 __pycache__/benchmark.cpython-310.pyc
 benchmark_previous.txt
 benchmark.txt
+benchmark_1_layers.txt
+benchmark_2_layers.txt
+benchmark_3_layers.txt
