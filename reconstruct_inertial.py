@@ -57,7 +57,7 @@ point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
  
 
 # -> Observations : OSSE
-SOURCE              = 'Croco'   # MITgcm Croco
+SOURCE              = 'MITgcm'   # MITgcm Croco
 TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
 dt                  = 60        # timestep of the model (s) 
 period_obs          = 86400     # s, how many second between observations
@@ -83,11 +83,13 @@ PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
+CHECK_MINI_HYPERCUBE    = True      # check of minimum, starting at corner of an hypercube
 
 # tests
 TEST_ROTARY_SPECTRA     = False
 TEST_JUNSTEK1D_KT       = False 
-BENCHMARK_ALL           = True
+
+BENCHMARK_ALL           = False     # performance benchmark
 
     
 # note: i need to tweak score_PSD with rotary spectra
@@ -473,7 +475,6 @@ if __name__ == "__main__":
         fig.savefig(path_save_png1D+nameJax+'series_reconstructed_long_'+str(Nl)+'layers_withMLD.png')
       
     # Plotting trajectories of given vector_k
-    # plotting tool for trajectory of 'unstek' for specific vector_k
     if PLOT_TRAJECTORY:
         print('* Plotting trajectories/step response for different vector K')
         
@@ -739,7 +740,7 @@ if __name__ == "__main__":
         ax.set_ylabel('log(k2)')
         plt.savefig(path_save_png1D+nameJax+'k1k2_J_2layer.png')
 
-    
+    # vector_k components and physic
     if LINK_K_AND_PHYSIC:
         """
         BC:
@@ -813,7 +814,88 @@ if __name__ == "__main__":
         print('     Ekman depth=',H1+H2,'m')
         print('     K1=',Kz1,'m2/s')
         print('     K2=',Kz2,'m2/s')
+    
+
+    # check of minimum, starting at corner of an hypercube
+    #   for the two layer model
+    if CHECK_MINI_HYPERCUBE:
+        """
+        Model is : 2 layers Junstek
+        We get the extreme values of vector_k by looking at the physic.
         
+        Recall the link between vector_k and physic:
+        
+                K0 = 1/(H1*rho)
+                K1 = Kz1 / (rho*H1) * 2/(H1+H2) = K0*2*Kz1/(H1+H2)
+                K2 = Kz2 / (rho*H2**2)
+                K3 = Kz2 / (rho*H2) * 2/(H1+H2) = H2*K2.2/(H1+H2)
+        
+        
+        Ekman depth Ed=H1+H2: from 1m to 100m
+        Kz1, Kz2: from 10e-5 to 10e-2 (m2/s2)
+        lets assume that 0.01H1<=  H2 <= H1
+        
+        pk = ln(K)
+        
+        this gives boundaries for each Ki:
+            K0 : max H1 = 1m 
+                 min H1 = 100m
+                 -> [0.00001, 0.01] -> pk0 = [-11.5, -4.5]
+            K1 : max K0max, Kz1 = 10e-2, Ed = 1m
+                 min K0min, Kz1 = 10e-5, Ed = 100m
+                 -> [2e-12, 2e-4] -> pk1 = [-27, -8.5]
+            K2 : max Kz2max=1e-2, min H2=1m
+                 min Kz2min = 1e-5, max H2 =100m
+                 -> [1e-12, 1e-8] -> pk2 = [-27.5, -18.5]
+            k3 : max H2max=100m,K2max=1e-8,Ed=100
+                 min H2min=1,K2min=1e-12,Ed=1
+                 -> [2e-8, 2e-12] -> pk3 = [-27, -17.5]   
+                 
+        Results:
+            Croco
+                LOCATION [W,E]= [-50.0, 35.0]
+                    pk = [-10.76084174  -9.39104774 -10.61772285 -12.66111073]
+                    cost = 0.1097624205689893
+                    -> this is the global minimum 
+                 
+        """ 
+        print('* Testing if minimum is a local or global minimum')
+        maxiter = 50
+        dico_bounds = {'pk0':[-11.5, -4.5],
+                       'pk1':[-27, -8.5],
+                       'pk2':[-27.5, -18.5],
+                       'pk3':[-27, -17.5]  }
+
+        model = jUnstek1D(2, forcing, observations)
+        var = Variational(model, observations)
+        
+        solution = np.zeros((2**4,2,4)) # n° corner, (ini,final), vector_k
+        nIter = np.zeros((2**4))     
+        nCost = np.zeros((2**4))         
+        npk = 0
+        for pk0 in dico_bounds['pk0']:
+            for pk1 in dico_bounds['pk1']:
+                for pk2 in dico_bounds['pk2']:
+                    for pk3 in dico_bounds['pk3']:
+                        pk = jnp.asarray([pk0,pk1,pk2,pk3])
+                        res = opt.minimize(var.cost, vector_k, args=(save_iter), # , args=(Uo, Vo, Ri)
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
+
+                        solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
+                        solution[npk,1,:] = res['x']
+                        nIter[npk] = res.nit
+                        nCost[npk] = var.cost(jnp.asarray(res['x']))
+  
+                        print('corner n°'+str(npk))
+                        print('     pk(ini) =',solution[npk,0,:])
+                        print('     pk(end) =',solution[npk,1,:])
+                        print('       niter =',nIter[npk])
+                        print('        cost =',nCost[npk])
+                        npk+=1
+                        
+    # TESTS
     if TEST_ROTARY_SPECTRA:
         
         # pour l'instant je le fait en 1D à 1 point lat,lon donc le spectre est bruité.
@@ -926,6 +1008,7 @@ if __name__ == "__main__":
         plt.legend(loc=1)
         plt.tight_layout()
         
+    # execution benchmark   
     if BENCHMARK_ALL:
         print('* Benchmarking ...')       
         Nexec = 20
@@ -959,7 +1042,7 @@ if __name__ == "__main__":
                         jUnstek1D(Nl, forcing=forcing, observations=observations),
                         jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
             benchmark_all(pk, Lmodel, observations, Nexec)
-        
+         
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
