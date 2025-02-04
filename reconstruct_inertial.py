@@ -57,7 +57,7 @@ point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
  
 
 # -> Observations : OSSE
-SOURCE              = 'MITgcm'   # MITgcm Croco
+SOURCE              = 'Croco'   # MITgcm Croco
 TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
 dt                  = 60        # timestep of the model (s) 
 period_obs          = 86400     # s, how many second between observations
@@ -854,9 +854,14 @@ if __name__ == "__main__":
         Results:
             Croco
                 LOCATION [W,E]= [-50.0, 35.0]
-                    pk = [-10.76084174  -9.39104774 -10.61772285 -12.66111073]
-                    cost = 0.1097624205689893
-                    -> this is the global minimum 
+                    pk = []
+                    cost = 
+                    -> 
+            MITgcm
+                LOCATION [W,E]= [-24.8, 45.2]
+                    pk = []
+                    cost = 
+                    ->
                  
         """ 
         print('* Testing if minimum is a local or global minimum')
@@ -873,15 +878,16 @@ if __name__ == "__main__":
         nIter = np.zeros((2**4))     
         nCost = np.zeros((2**4))         
         npk = 0
+        # looping over all corners of the hypercube
         for pk0 in dico_bounds['pk0']:
             for pk1 in dico_bounds['pk1']:
                 for pk2 in dico_bounds['pk2']:
                     for pk3 in dico_bounds['pk3']:
                         pk = jnp.asarray([pk0,pk1,pk2,pk3])
-                        res = opt.minimize(var.cost, vector_k, args=(save_iter), # , args=(Uo, Vo, Ri)
-                        method='L-BFGS-B',
-                        jac=var.grad_cost,
-                        options={'disp': True, 'maxiter': maxiter})
+                        res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
+                            method='L-BFGS-B',
+                            jac=var.grad_cost,
+                            options={'disp': True, 'maxiter': maxiter})
 
                         solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
                         solution[npk,1,:] = res['x']
@@ -895,6 +901,28 @@ if __name__ == "__main__":
                         print('        cost =',nCost[npk])
                         npk+=1
                         
+        # writing in the file
+        name_hypercube = 'results_hypercube_'+SOURCE+'_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])
+        with open(name_hypercube+".txt", "w") as f:     
+            f.write("* HEADER ========================================\n")
+            f.write('* MODEL = '+str(SOURCE)+'\n')
+            f.write('* LOCATION = LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'\n')
+            f.write('*\n')
+            f.write('* num of corner'+'\n')
+            f.write('* pk(ini)'+'\n')
+            f.write('* pk(end)'+'\n')
+            f.write('* niter'+'\n')
+            f.write('* cost'+'\n')
+            f.write('* ===============================================\n')
+            for npk in range(solution.shape[0]):
+                f.write(str(npk)+'\n')
+                f.write(str(solution[npk,0,:])+'\n')
+                f.write(str(solution[npk,1,:])+'\n')
+                f.write(str(nIter[npk])+'\n')
+                f.write(str(nCost[npk])+'\n')
+            
+            
+                      
     # TESTS
     if TEST_ROTARY_SPECTRA:
         

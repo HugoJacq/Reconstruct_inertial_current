@@ -174,3 +174,5 @@ tests_jax/__pycache__/junstek.cpython-310.pyc
 tests_jax/__pycache__/observations.cpython-310.pyc
 tests_jax/__pycache__/tools.cpython-310.pyc
 tests_jax/__pycache__/unstek.cpython-310.pyc
+results_hypercube_Croco_LON-50.0_LAT35.0.txt
+results_hypercube_MITgcm_LON-24.8_LAT45.2.txt
