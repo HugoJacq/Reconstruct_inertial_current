@@ -1,3 +1,3 @@
-# Inertial_current_from_MITgcm
+# Reconstruct_inertial_current 
 
 `python reconstruct_inertial.py`
