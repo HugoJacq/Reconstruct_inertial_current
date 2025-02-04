@@ -19,19 +19,11 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     """
 
     x, y = np.meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
-    #x, y = meshgrid(np.arange(-int(ns*sigmax), int(ns*sigmax)+1), np.arange(-int(ns*sigmay), int(ns*sigmay)+1), indexing='ij')
     cf=np.exp(-(x**2/sigmax**2+y**2/sigmay**2))
     m=~np.isnan(s)*1.
     s = np.where(np.isnan(s),0,s)
-    #s[np.isnan(s)]=0.
-    # if type(s)=='xarray.core.dataarray.DataArray':
-    #     conv2d = lambda x: sp.signal.convolve2d(x, cf, mode="same")
-    #     s_sum = xr.apply_ufunc(conv2d, s)
-    #     w_sum = xr.apply_ufunc(conv2d, m)
-    #print('s.shape,cf.shape,cf.shape',s.shape,cf.shape,cf.shape)
     s_sum = (sp.signal.convolve2d(s, cf, mode='same'))
     w_sum = (sp.signal.convolve2d(m, cf, mode='same'))
-    #print('s_sum.shape,w_sum.shape',s_sum.shape,w_sum.shape)
     sf = s*0.
     sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
     return sf
@@ -44,7 +36,6 @@ def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2):
         list_results = []
         for it in range(nt):
             list_results.append( my2dfilter(s[it,:,:], sigmax, sigmay) )
-            print(list_results[-1])
     else:
         list_results = Parallel(n_jobs=N_CPU)(delayed(my2dfilter)(s[it,:,:], sigmax, sigmay) for it in range(nt))
     

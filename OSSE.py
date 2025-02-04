@@ -5,13 +5,13 @@ from xgcm import Grid as xGrid
 from constants import *
 import pathlib
 from datetime import timedelta
-import xcroco as xc
+#import xcroco as xc
 import matplotlib.pyplot as plt
 import warnings
 
 from filters import *
 from tools import *
-from adapt_croco_to_xgcm import *
+#from adapt_croco_to_xgcm import *
  
 class Model_source_OSSE:
     """
@@ -83,12 +83,18 @@ class Model_source_OSSE:
                                                 'hbl':'MLD',
                                                 'u':'U',
                                                 'v':'V',
-                                                'time_counter':'time'})
+                                                'time_counter':'time',
+                                                'nav_lat_rho':'lat_rho',
+                                                'nav_lon_rho':'lon_rho',
+                                                'nav_lat_u':'lat_u',
+                                                'nav_lat_v':'lat_v',
+                                                'nav_lon_u':'lon_u',
+                                                'nav_lon_v':'lon_v'})
             
             # building xgcm grid
             coords={'x':{'center':'x_rho',  'right':'x_u'}, 
                     'y':{'center':'y_rho', 'right':'y_v'}}    
-            self.grid = Grid(self.dataset, 
+            self.grid = xGrid(self.dataset, 
                 coords=coords,
                 boundary='extend')
             
@@ -174,7 +180,7 @@ def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='
         # building xgcm grid
         coords={'x':{'center':'x_rho',  'right':'x_u'}, 
                 'y':{'center':'y_rho', 'right':'y_v'}}    
-        grid = Grid(ds, 
+        grid = xGrid(ds, 
               coords=coords,
               boundary='extend')
     
