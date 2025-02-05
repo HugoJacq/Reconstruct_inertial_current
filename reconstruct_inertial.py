@@ -88,15 +88,15 @@ PRINT_INFO              = False     # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = True     # maps the cost function values
+ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
-TEST_JUNSTEK1D_KT       = False     # implementing Junstek1D_kt
-
+TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
 BENCHMARK_ALL           = False     # performance benchmark
 
     
@@ -686,7 +686,7 @@ if __name__ == "__main__":
         # -> number of values = number of layers
         # -> values = turbulent diffusion coefficient
         step = 1 # 0.25
-        kmin,kmax = -15, -4
+        kmin,kmax = -28, -4.5
         Jmap_cmap = 'terrain'
         Nl = 2
         
@@ -834,7 +834,6 @@ if __name__ == "__main__":
         print('     K1=',Kz1,'m2/s')
         print('     K2=',Kz2,'m2/s')
     
-
     # check of minimum, starting at corner of an hypercube
     #   for the two layer model
     if CHECK_MINI_HYPERCUBE:
@@ -944,7 +943,7 @@ if __name__ == "__main__":
                     f.write(str(nIter[npk])+'\n')
                     f.write(str(nCost[npk])+'\n')
             
-    
+        # Getting the values from file        
            
                       
     # TESTS
@@ -1016,12 +1015,13 @@ if __name__ == "__main__":
         
         dT = 3*86400 # s
         vector_k = jnp.asarray([-11.31980127, -10.28525189])
-        vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+        #vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
         Nl = len(vector_k)//2
         model = jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)
         var = Variational(model, observations)
         
+        print('* test junstek1D_kt '+str(Nl)+' layers')
         # time varying vector_k
         vector_kt = model.kt_ini(vector_k)
         vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
@@ -1031,13 +1031,13 @@ if __name__ == "__main__":
         _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
-        print(t2-t1)
+        print('time, forward model (with compile)',t2-t1)
+        
         _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
         
-        print( clock.time()-t2)
-        
-        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter), # , args=(Uo, Vo, Ri)
+        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
                         method='L-BFGS-B',
                         jac=var.grad_cost,
                         options={'disp': True, 'maxiter': maxiter})
@@ -1054,12 +1054,21 @@ if __name__ == "__main__":
         plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
         plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
         plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
-        #plt.title(title)
+        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(res['x']),4)))
         plt.xlabel('Time (days)')
         plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
+        plt.savefig('JAX_test_junstek1D_kt_'+str(Nl)+'layers.png')
         
+    if TEST_JUNSTEK1D_KT_SPATIAL:
+        """
+        """
+        # -50.,35.
+        file = '' # TBD
+        forcing2D = Forcing2D(dt,[-55,-50],[30,35],file,TRUE_WIND_STRESS)
+        
+    
     # execution benchmark   
     if BENCHMARK_ALL:
         print('* Benchmarking ...')       
@@ -1100,10 +1109,10 @@ if __name__ == "__main__":
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
     # - préparation modèle 2D: modele 1D appliqué à une grille 5°/5°
     # - rotary spectra sur un grand domaine spatial pour meilleur convergence
-    # - télécharger fichier janvier Croco (et fichier été ?)
+    # - DONE: télécharger fichier janvier Croco (et fichier été ?)
     # - ekman depth vs MLD: comparer (1D, f(time) )
     #       model simple 2 couches avec K obtenu par minimization
-    #       model simple 100 couchse avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
+    #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
     #       model 3D: MLD basé sur gradient de densité
     
     end = clock.time()

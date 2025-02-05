@@ -122,8 +122,6 @@ def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='
     OUPUT:
         - a netcdf file with time interpolated at ['ir','jr'], for 
           currents, SSH, MLD. Stress is added as C.U10**2
-          
-    TBD: add Crocco source support
     """   
     # checking if file is present
     name_save = path_save
@@ -307,3 +305,23 @@ def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='
     ds_i.close()
     print('     done !')
     
+def interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save, method='linear'):
+    """
+    Source model is : Crocco
+    
+    Builds a netcdf file with variable interpolated at the timestep dt.
+        initial file is North Atlanctic region, we create a subset defined by LON_bounds, LAT_bounds
+
+    INPUT:
+        - model_source: object of class Model_source_OSSE (dataset and name of coords)
+        - dt : time step to interpolate at
+        - LON_bounds : longitude bounds of the spatial domain
+        - LAT_bounds : latitutde bounds of the spatial domain
+        - N_CPU: do the spatial filter in // if > 1
+        - path_save: where to save the netcdf file
+        - method : interpolation method
+    OUPUT:
+        - a netcdf file with time interpolated on a 2D grid comprised in between LON_bounds and LAT_bounds, 
+            for ageo currents, geo current, SSH, MLD, stress, fluxes
+    """
+    # TBD
