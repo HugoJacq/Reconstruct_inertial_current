@@ -88,14 +88,14 @@ PRINT_INFO              = False     # show info during minimization
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
-ONE_LAYER_COST_MAP      = False     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+ONE_LAYER_COST_MAP      = True     # maps the cost function values
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
 
 # tests
-TEST_ROTARY_SPECTRA     = False
-TEST_JUNSTEK1D_KT       = False 
+TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
+TEST_JUNSTEK1D_KT       = False     # implementing Junstek1D_kt
 
 BENCHMARK_ALL           = False     # performance benchmark
 
@@ -119,6 +119,11 @@ if ON_HPC:
                             '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                                 '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
                 }
+    files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
+                                    list(files_dict['MITgcm']['filesH']) + 
+                                    list(files_dict['MITgcm']['filesW']) + 
+                                    list(files_dict['MITgcm']['filesD']) + 
+                                    list(files_dict['MITgcm']['filesTau']) )
 # Local
 else:
     if SOURCE=='MITgcm':
@@ -135,7 +140,8 @@ else:
                                 '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
                 }    
 
-
+# concatenate files
+files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
 
 # -> list of save path
 path_save_interp1D = './'           # where to save interpolated (on model dt) currents
@@ -201,13 +207,7 @@ if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
 else: path_save_png1D += 'stress_UU/'
 if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
 
-# concatenate files
-files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
-                                    list(files_dict['MITgcm']['filesH']) + 
-                                    list(files_dict['MITgcm']['filesW']) + 
-                                    list(files_dict['MITgcm']['filesD']) + 
-                                    list(files_dict['MITgcm']['filesTau']) )
-files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
+
 
 
 # MAIN LOOP
@@ -685,32 +685,35 @@ if __name__ == "__main__":
         # LAYER DEFINITION
         # -> number of values = number of layers
         # -> values = turbulent diffusion coefficient
-        """
-        with Cd.U**2:
-            vecteur solution :  [ -3.47586165  -9.06189063 -11.22302904 -12.43724667]
-            cost function value : 0.28825167461378703
-        with true Tau:
-            vecteur solution :  [ -9.14721791, -8.79469884, -11.20512638, -12.5794675]
-            cost function value : 0.24744266411643656
-        """
-        PARALLEL = True
-        step = 0.25 # 0.25
+        step = 1 # 0.25
+        kmin,kmax = -15, -4
         Jmap_cmap = 'terrain'
+        Nl = 2
+        
         if TRUE_WIND_STRESS:
-            k0 = -9.14721791
-            k3 = -12.5794675
-            k1_mini = -8.79469884
-            k2_mini = -11.20512638
-            kmin,kmax = -20, -1
+            pk_sol = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
         else:
-            k0 = -3.47586165
-            k3 = -12.43724667
-            k1_mini = -9.06189063
-            k2_mini = -11.22302904
-            kmin,kmax = -20, -4
+            pk_sol = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['Cd.UU']
+        
+        k0 = pk_sol[0]
+        k1_mini = pk_sol[1]
+        k2_mini = pk_sol[2]
+        k3 = pk_sol[3]
+        
+        #     k0 = -9.14721791
+        #     k3 = -12.5794675
+        #     k1_mini = -8.79469884
+        #     k2_mini = -11.20512638
+        #     kmin,kmax = -20, -1
+        # else:
+        #     k0 = -3.47586165
+        #     k3 = -12.43724667
+        #     k1_mini = -9.06189063
+        #     k2_mini = -11.22302904
+        #     kmin,kmax = -20, -4
         
         tested_values = np.arange(kmin,kmax,step)
-        Nl = 2
+        
         if JAXIFY: model = jUnstek1D(Nl, forcing, observations)
         else: model = Unstek1D(Nl, forcing, observations)
         var = Variational(model, observations)
@@ -744,19 +747,7 @@ if __name__ == "__main__":
                         print('     ',j)
                         vector_k0k1 = np.array([k0,k1,k2,k3])
                         J[j,i] = var.cost(vector_k0k1)
-    
-        # if N_CPU>1:
-        #     J = Parallel(n_jobs=N_CPU)(delayed(
-        #             var.cost)(np.array([k0,k1,k2,k3]))
-        #                             for k1 in tested_values for k2 in tested_values)
-        #     J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
-        # else:
-        #     J = np.zeros((len(tested_values),len(tested_values)))
-        #     for i,k1 in enumerate(tested_values):
-        #         for j,k2 in enumerate(tested_values):
-        #             vector_k = np.array([k0,k1,k2,k3])
-        #             J[j,i] = var.cost(vector_k)
-        
+            
         # plotting
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)
         cmap.set_bad(color='indianred')
@@ -899,57 +890,62 @@ if __name__ == "__main__":
                        'pk2':[-27.5, -18.5],
                        'pk3':[-27, -17.5]  }
 
-        model = jUnstek1D(2, forcing, observations)
-        var = Variational(model, observations)
-        
-        solution = np.zeros((2**4,2,4)) # n° corner, (ini,final), vector_k
-        nIter = np.zeros((2**4))     
-        nCost = np.zeros((2**4))         
-        npk = 0
-        # looping over all corners of the hypercube
-        for pk0 in dico_bounds['pk0']:
-            for pk1 in dico_bounds['pk1']:
-                for pk2 in dico_bounds['pk2']:
-                    for pk3 in dico_bounds['pk3']:
-                        pk = jnp.asarray([pk0,pk1,pk2,pk3])
-                        res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
-                            method='L-BFGS-B',
-                            jac=var.grad_cost,
-                            options={'disp': True, 'maxiter': maxiter})
 
-                        solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
-                        solution[npk,1,:] = res['x']
-                        nIter[npk] = res.nit
-                        nCost[npk] = var.cost(jnp.asarray(res['x']))
-  
-                        print('corner n°'+str(npk))
-                        print('     pk(ini) =',solution[npk,0,:])
-                        print('     pk(end) =',solution[npk,1,:])
-                        print('       niter =',nIter[npk])
-                        print('        cost =',nCost[npk])
-                        npk+=1
-                        
-        # writing in the file
         name_hypercube = 'results_hypercube_'+SOURCE+'_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])
-        with open(name_hypercube+".txt", "w") as f:     
-            f.write("* HEADER ========================================\n")
-            f.write('* MODEL = '+str(SOURCE)+'\n')
-            f.write('* LOCATION = LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'\n')
-            f.write('*\n')
-            f.write('* num of corner'+'\n')
-            f.write('* pk(ini)'+'\n')
-            f.write('* pk(end)'+'\n')
-            f.write('* niter'+'\n')
-            f.write('* cost'+'\n')
-            f.write('* ===============================================\n')
-            for npk in range(solution.shape[0]):
-                f.write(str(npk)+'\n')
-                f.write(str(solution[npk,0,:])+'\n')
-                f.write(str(solution[npk,1,:])+'\n')
-                f.write(str(nIter[npk])+'\n')
-                f.write(str(nCost[npk])+'\n')
+        if pathlib.Path(name_hypercube).is_file():
+            print(' file with hypercube results is here')
+        else:
+            model = jUnstek1D(2, forcing, observations)
+            var = Variational(model, observations)
             
+            solution = np.zeros((2**4,2,4)) # n° corner, (ini,final), vector_k
+            nIter = np.zeros((2**4))     
+            nCost = np.zeros((2**4))         
+            npk = 0
+            # looping over all corners of the hypercube
+            for pk0 in dico_bounds['pk0']:
+                for pk1 in dico_bounds['pk1']:
+                    for pk2 in dico_bounds['pk2']:
+                        for pk3 in dico_bounds['pk3']:
+                            pk = jnp.asarray([pk0,pk1,pk2,pk3])
+                            res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
+                                method='L-BFGS-B',
+                                jac=var.grad_cost,
+                                options={'disp': True, 'maxiter': maxiter})
+
+                            solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
+                            solution[npk,1,:] = res['x']
+                            nIter[npk] = res.nit
+                            nCost[npk] = var.cost(jnp.asarray(res['x']))
+    
+                            print('corner n°'+str(npk))
+                            print('     pk(ini) =',solution[npk,0,:])
+                            print('     pk(end) =',solution[npk,1,:])
+                            print('       niter =',nIter[npk])
+                            print('        cost =',nCost[npk])
+                            npk+=1
+                            
+            # writing in the file
+            with open(name_hypercube+".txt", "w") as f:     
+                f.write("* HEADER ========================================\n")
+                f.write('* MODEL = '+str(SOURCE)+'\n')
+                f.write('* LOCATION = LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'\n')
+                f.write('*\n')
+                f.write('* num of corner'+'\n')
+                f.write('* pk(ini)'+'\n')
+                f.write('* pk(end)'+'\n')
+                f.write('* niter'+'\n')
+                f.write('* cost'+'\n')
+                f.write('* ===============================================\n')
+                for npk in range(solution.shape[0]):
+                    f.write(str(npk)+'\n')
+                    f.write(str(solution[npk,0,:])+'\n')
+                    f.write(str(solution[npk,1,:])+'\n')
+                    f.write(str(nIter[npk])+'\n')
+                    f.write(str(nCost[npk])+'\n')
             
+    
+           
                       
     # TESTS
     if TEST_ROTARY_SPECTRA:

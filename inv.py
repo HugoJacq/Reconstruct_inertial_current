@@ -169,7 +169,7 @@ class Variational:
         """
         N, Nl2 = jnp.shape(array_pk) # squared number of vector k, size of vector k
         Nchange = 2 # number of component of vector k that change
-        Nl = jnp.sqrt(Nl2)
+        Nl = Nl2//2
         
         sizeN = jnp.sqrt(array_pk.shape[0]).astype(int)
         Jshape = tuple([sizeN]*Nchange)
