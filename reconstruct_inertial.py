@@ -13,7 +13,7 @@ Updates:
 import os
 #os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = .125
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125'
 print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
 import time as clock
@@ -84,7 +84,7 @@ PRINT_INFO              = False     # show info during minimization
 
 # -> ANALYSIS   
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
-MINIMIZE                = False     # find the vector K starting from 'pk'
+MINIMIZE                = True     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed

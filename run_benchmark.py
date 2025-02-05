@@ -62,7 +62,7 @@ forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
 observations = Observation1D(period_obs, dt, path_file)
 
 print('* Benchmarking ...')       
-Nexec = 5 # >1
+Nexec = 20 # >1
 dT = 1*86400        
 
 NB_LAYER = [2]
