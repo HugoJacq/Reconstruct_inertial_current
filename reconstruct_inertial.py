@@ -10,6 +10,9 @@ Updates:
     - HJ 7/01/25: add comments everywhere
     - HJ 9/01/25: add build large scale variable file
 """
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import time as clock
 import scipy.optimize as opt
 from dask.distributed import Client,LocalCluster
@@ -17,7 +20,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import sys
 import glob
-import os
+
 #from optimparallel import minimize_parallel
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
