@@ -55,7 +55,7 @@ print('* Benchmarking ...')
 Nexec = 20
 dT = 1*86400        
 
-NB_LAYER = [1,2,3]
+NB_LAYER = [2]
 
 # 1 layer
 if 1 in NB_LAYER:
