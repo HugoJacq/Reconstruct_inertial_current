@@ -1,8 +1,13 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # slower if false
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".125"
+os.environ['XLA_GPU_ENABLE_LATENCY_HIDING_SCHEDULER'] = 'false' # if true, slower
+os.environ['CUDA_DEVICE_MAX_CONNECTIONS'] = "1"
+
+
 print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
+print(os.environ['XLA_GPU_ENABLE_LATENCY_HIDING_SCHEDULER'])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
 
 # custom imports
@@ -58,10 +63,10 @@ forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
 observations = Observation1D(period_obs, dt, path_file)
 
 print('* Benchmarking ...')       
-Nexec = 20 # >1
+Nexec = 5 # >1
 dT = 1*86400        
 
-NB_LAYER = [1,2,3,4]
+NB_LAYER = [2]
 
 # 1 layer
 if 1 in NB_LAYER:
