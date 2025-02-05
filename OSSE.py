@@ -82,15 +82,15 @@ class Model_source_OSSE:
                                                 'swrad':'SW_rad',
                                                 'hbl':'MLD',
                                                 'u':'U',
-                                                'v':'V',
-                                                'time_counter':'time',
+                                                'v':'V',})
+            if 'nav_lat_rho' in self.dataset.variables:
+                self.dataset = self.dataset.rename({'time_counter':'time',
                                                 'nav_lat_rho':'lat_rho',
                                                 'nav_lon_rho':'lon_rho',
                                                 'nav_lat_u':'lat_u',
                                                 'nav_lat_v':'lat_v',
                                                 'nav_lon_u':'lon_u',
                                                 'nav_lon_v':'lon_v'})
-            
             # building xgcm grid
             coords={'x':{'center':'x_rho',  'right':'x_u'}, 
                     'y':{'center':'y_rho', 'right':'y_v'}}    
