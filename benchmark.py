@@ -64,8 +64,8 @@ def benchmark_all(pk, Lmodel, observations, Nexec):
             JAXED = Lmodel[k].isJax
             if JAXED:
                 txt_f = str(np.round( Ltimes_forward[k,0]-Ltimes_forward[k,1],NB_dec ))
-                txt_c = str(np.round(Ltimes_cost[k,0]-Ltimes_cost[k,1],NB_dec ))
-                txt_g = str(np.round(Ltimes_grad[k,0]-Ltimes_grad[k,1],NB_dec ))
+                txt_c = str(np.round( Ltimes_cost[k,0]-Ltimes_cost[k,1],NB_dec ))
+                txt_g = str(np.round( Ltimes_grad[k,0]-Ltimes_grad[k,1],NB_dec ))
                 ind0 = 1
             else:
                 ind0 = 0
@@ -73,8 +73,8 @@ def benchmark_all(pk, Lmodel, observations, Nexec):
                 
             f.write(name + ', ' + str(JAXED)+', '+str(Nb_param[k])+'\n')
             f.write('   - forward, '+str(np.round( np.mean(Ltimes_forward[ind0:]),NB_dec ))+', '+str(np.round( np.std(Ltimes_forward[ind0:]),NB_dec ))+', '+txt_f+'\n')
-            f.write('   - cost   , '+str(np.round(np.mean(Ltimes_cost[ind0:]),    NB_dec ))+', '+str(np.round( np.std(Ltimes_cost[ind0:]),NB_dec ))+   ', '+txt_f+'\n')
-            f.write('   - grad   , '+str(np.round( np.mean(Ltimes_grad[ind0:]),   NB_dec ))+', '+str(np.round( np.std(Ltimes_grad[ind0:]),NB_dec ))+   ', '+txt_f+'\n')
+            f.write('   - cost   , '+str(np.round(np.mean(Ltimes_cost[ind0:]),    NB_dec ))+', '+str(np.round( np.std(Ltimes_cost[ind0:]),NB_dec ))+   ', '+txt_c+'\n')
+            f.write('   - grad   , '+str(np.round( np.mean(Ltimes_grad[ind0:]),   NB_dec ))+', '+str(np.round( np.std(Ltimes_grad[ind0:]),NB_dec ))+   ', '+txt_g+'\n')
         
     f = open(name_bench+'.txt')
     print('Results:')
