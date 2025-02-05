@@ -5,9 +5,16 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # slower if false
 os.environ['XLA_GPU_ENABLE_LATENCY_HIDING_SCHEDULER'] = 'false' # if true, slower
 os.environ['CUDA_DEVICE_MAX_CONNECTIONS'] = "1"
 
+<<<<<<< HEAD
 print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 print(os.environ['XLA_GPU_ENABLE_LATENCY_HIDING_SCHEDULER'])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])    
+=======
+
+print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
+print(os.environ['XLA_GPU_ENABLE_LATENCY_HIDING_SCHEDULER'])
+#print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
+>>>>>>> 7ad2ad1c21d99a559ae107d89a83034cc303a189
 
 # custom imports
 from OSSE import *
