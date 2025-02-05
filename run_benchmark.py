@@ -45,6 +45,8 @@ dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
                                         '2':{'TRUE_TAU'  :[-10.76035344, -9.3901326, -10.61707124, -12.66052074]
                                              },
                                         '3':{'TRUE_TAU'  :[-8,-9,-10.76035344, -9.3901326, -10.61707124, -12.66052074] # this is WIP
+                                             },
+                                        '4':{'TRUE_TAU'  :[-7,-7.5,-8,-9,-10.76035344, -9.3901326, -10.61707124, -12.66052074] # this is WIP
                                              }
                                         }
                                      } 
@@ -56,10 +58,10 @@ forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
 observations = Observation1D(period_obs, dt, path_file)
 
 print('* Benchmarking ...')       
-Nexec = 2 # >1
+Nexec = 20 # >1
 dT = 1*86400        
 
-NB_LAYER = [2]
+NB_LAYER = [1,2,3,4]
 
 # 1 layer
 if 1 in NB_LAYER:
@@ -82,6 +84,15 @@ if 2 in NB_LAYER:
 # 3 layer
 if 3 in NB_LAYER:
     Nl = 3
+    pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
+    Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
+                jUnstek1D(Nl, forcing=forcing, observations=observations),
+                jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
+    benchmark_all(pk, Lmodel, observations, Nexec)
+    
+# 4 layer
+if 4 in NB_LAYER:
+    Nl = 4
     pk = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
     Lmodel = [  Unstek1D(Nl, forcing=forcing, observations=observations),
                 jUnstek1D(Nl, forcing=forcing, observations=observations),
