@@ -9,5 +9,8 @@ rho = 1000 # kg/m3
 distance_1deg_equator = 111000.0 # m
 
 # jax
-gpu_device = jax.devices('gpu')[0]
 cpu_device = jax.devices('cpu')[0]
+try:
+    gpu_device = jax.devices('gpu')[0]
+except:
+    gpu_device = cpu_device
