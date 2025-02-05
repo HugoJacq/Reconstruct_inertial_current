@@ -1,5 +1,9 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".125"
+print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
+print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
 
 # custom imports
 from OSSE import *
@@ -52,7 +56,7 @@ forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
 observations = Observation1D(period_obs, dt, path_file)
 
 print('* Benchmarking ...')       
-Nexec = 20
+Nexec = 2 # >1
 dT = 1*86400        
 
 NB_LAYER = [2]

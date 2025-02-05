@@ -32,16 +32,18 @@ def benchmark_all(pk, Lmodel, observations, Nexec):
         
         if type(model).__name__ == 'jUnstek1D_Kt':
             jpk = model.kt_2D_to_1D(model.kt_ini(pk))
-        
+            
+        Nb_param[k] = len(pk)
         if model.isJax:
             jpk = jnp.asarray(pk)
             if type(model).__name__ == 'jUnstek1D_Kt':
                 jpk = model.kt_2D_to_1D(model.kt_ini(jpk))
+                Nb_param[k] = model.kt_ini(jpk).shape[0]*model.nl*2
             Ltimes_forward[k] = benchmark_func(jpk, model.do_forward_jit, Nexec)
         else:
             jpk = np.asarray(pk)
             Ltimes_forward[k] = benchmark_func(jpk, model.do_forward, Nexec)
-        Nb_param[k] = jpk.size            
+        #Nb_param[k] = jpk.shape[-1]*2            
         Ltimes_cost[k] = benchmark_func(jpk, var.cost, Nexec)
         Ltimes_grad[k] = benchmark_func(jpk, var.grad_cost, Nexec)
     
