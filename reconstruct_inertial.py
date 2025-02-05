@@ -11,11 +11,12 @@ Updates:
     - HJ 9/01/25: add build large scale variable file
 """
 import os
-#os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125'
-print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
-print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
+#os.environ["OMP_NUM_THREADS"] = "1" # force mono proc
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # for jax
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
+#print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
+#print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
+
 import time as clock
 import scipy.optimize as opt
 from dask.distributed import Client,LocalCluster
@@ -84,10 +85,10 @@ PRINT_INFO              = False     # show info during minimization
 
 # -> ANALYSIS   
 MAP_1D_LOCATION         = False     # plot a map to show where we are working
-MINIMIZE                = True     # find the vector K starting from 'pk'
+MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
+TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
 
@@ -95,7 +96,7 @@ CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an
 TEST_ROTARY_SPECTRA     = False
 TEST_JUNSTEK1D_KT       = False 
 
-BENCHMARK_ALL           = True     # performance benchmark
+BENCHMARK_ALL           = False     # performance benchmark
 
     
 # note: i need to tweak score_PSD with rotary spectra
@@ -104,19 +105,6 @@ BENCHMARK_ALL           = True     # performance benchmark
 dpi=200
 
 # -> List of files
-
-# Local
-if not ON_HPC:
-    files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
-                            'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
-                            'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
-                            'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
-                            'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
-                            },
-                'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
-                            '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
-                                '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
-                }
 # Jackzilla
 if ON_HPC:
     files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/data2/nobackup/clement/Data/Llc2160/llc2160_daily_latlon_SSC/llc2160_2020-11-*_SSU-SSV.nc")),
@@ -130,6 +118,20 @@ if ON_HPC:
                             '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                                 '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
                 }
+# Local
+else:
+    files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
+                            'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
+                            'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
+                            'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
+                            'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
+                            },
+                'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
+                            '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
+                                '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
+                }    
+
+
 
 # -> list of save path
 path_save_interp1D = './'           # where to save interpolated (on model dt) currents
@@ -597,9 +599,9 @@ if __name__ == "__main__":
         print('* Looking at cost function for k0,k1 in 1 layer model')
     
         PLOT_ITERATIONS = False
-        kmin = -15
+        kmin = -20
         kmax = 0
-        step = 1
+        step = 0.25
         maxiter = 10
         vector_k = np.array([-12,-12]) # initial vector k
         Nl = len(vector_k)//2

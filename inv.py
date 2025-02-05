@@ -176,7 +176,7 @@ class Variational:
         J = jnp.zeros( Jshape )
         
         arg0 = array_pk, indexes, J
-        if Nl<2:
+        if Nl==1:
             _, _, J = lax.fori_loop(0,N,self.__step_jax_cost_vect_jit_cpu,arg0)
         else:
             _, _, J = lax.fori_loop(0,N,self.__step_jax_cost_vect_jit_gpu,arg0)
