@@ -150,6 +150,36 @@ def find_indices(points,lon,lat,tree=None):
     ind = np.column_stack(np.unravel_index(idx,lon.shape))
     return [(i,j) for i,j in ind]
 
+def find_indices_gridded_latlon(LON, LON_bounds, LAT, LAT_bounds):
+	"""
+	From a gridded product, find the indx,indy corresponding to 'LON_bounds' and 'LAT_bounds'
+
+	INPUT:
+		- LON		: Longitude 2D grid (y,x)
+		- LON_bounds: Longitude bounds (list of 2, °E)
+		- LAT		: Latitude 2D grid (y,x)
+		- LAT_bounds: Latitude bounds (list of 2, °N)
+	OUTPUT:
+		- indxmin, indxmax, indymin, indymax : tuple of 4 indices
+
+	Note:
+		- finding a square in a latlon grid is not possible. Here the square represented by
+		the indices do not represent a square !
+		- if the model is on C grid, I advise to use the rho-point lat/lon grid.,
+			but use the indices found also for other grid.
+	"""
+	indxmin, indxmax = LON.shape[1],0
+	indymin, indymax = LON.shape[0],0
+	for pointLAT in LAT_bounds:
+		for pointLON in LON_bounds:
+			L = find_indices([pointLON,pointLAT],LON,LAT)
+			indx,indy = L[0]
+			if indx < indxmin: indxmin = indx
+			if indx > indxmax: indxmax = indx
+			if indy < indymin: indymin = indy
+			if indy > indymax: indymax = indy
+	return (indxmin,indxmax,indymin,indymax)
+    
 
 def psd1d(hh,dx=1.,tap=0.05, detrend=True):
 	"""
@@ -220,4 +250,19 @@ def rotary_spectra(dt,Ua,Va,U,V):
 	MPe1 /= count
 	MPe2 /= count
 	return ff, MPr2, MPr1, MPe2, MPe1
+ 
+def print_memory_array(ds,namevar):
+    """
+    print in terminal the amount of memory used by a dask array
+    """ 
+    total_memory = ds[namevar].nbytes
+    print("Total memory used by the DataArray "+namevar+f": {total_memory / 1024**2:.2f} MB")
     
+def print_memory_chunk(ds,namevar):
+    """
+    print in the terminal the memory used by a chunk of 'dataArray'.
+    It is assumed that all chunk have a similar size.
+    """
+    nelements = np.prod(ds[namevar].data.chunksize)
+    chunk_memory = nelements * ds[namevar].data.itemsize
+    print("Memory used by each chunk of the DataArray "+namevar+f" {chunk_memory / 1024**2:.2f} MB")

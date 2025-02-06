@@ -45,7 +45,7 @@ class Forcing2D:
         
         # A METTRE DANS UNE FONCTION QUI SERA
         # REUTILISEE DANS 'OSSE:interp_at_model_t_2D'
-        # -> voir utiliser le fichier interped pour récupérer le domaine spatial
+        # -> voir directement utiliser le fichier interped2D pour récupérer le domaine spatial
         
         # reducing lat/lon to fit bounds
         L_corners = []
@@ -62,16 +62,18 @@ class Forcing2D:
                 if indy < y_rho_indmin: indy = y_rho_indmin
                 if indy > y_rho_indmax: indy = y_rho_indmax
         
-        print('LOOKING FOR:')
+        print('LOOKING AT:')
         print(LON_bounds[0]+','+LAT_bounds[1]+'------'+LON_bounds[1]+','+LAT_bounds[1])
-        print('|            |')
-        print('|            |')
+        print('|              |')
+        print('|              |')
         print(LON_bounds[0]+','+LAT_bounds[0]+'------'+LON_bounds[1]+','+LAT_bounds[0])
         print('FOUND:')
-        print(lat_rho[x_rho_indmin,y_rho_indmax].values+'------'+lat_rho[x_rho_indmax,y_rho_indmax].values)
-        print('|            |')
-        print('|            |')
-        print(lat_rho[x_rho_indmin,y_rho_indmin].values+'------'+lat_rho[x_rho_indmax,y_rho_indmin].values)
+        print(lat_rho[x_rho_indmin,y_rho_indmax].values+'------------'+lat_rho[x_rho_indmax,y_rho_indmax].values)
+        print('|                    |')
+        print('|                    |')
+        print('|                    |')
+        print('|                    |')
+        print(lat_rho[x_rho_indmin,y_rho_indmin].values+'------------'+lat_rho[x_rho_indmax,y_rho_indmin].values)
         
         raise Exception
         self.U,self.V,self.MLD = self.data.U.values,self.data.V.values,self.data.MLD

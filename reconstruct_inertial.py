@@ -54,21 +54,24 @@ start = clock.time()
 ###############################################
 # //
 DASHBOARD   = False     # when using dask
-N_CPU       = 1         # when using joblib, if >1 then use // code
+N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
 ON_HPC      = False      # on HPC
 
 # -> area of interest
-# -> index for spatial location. We work in 1D
+# 1D
 point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
                     'Croco':[-50.,35.]}
- 
+# 2D
+LON_bounds = [-55.,-50.]
+LAT_bounds = [30.,35.]
 
 # -> Observations : OSSE
 SOURCE              = 'Croco'   # MITgcm Croco
 TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
 dt                  = 60        # timestep of the model (s) 
 period_obs          = 86400     # s, how many second between observations
+MODE                = '2D'      # '1D' or '1D_kt' or '2D'
 
 # -> LAYER DEFINITION
 #        number of values = number of layers
@@ -144,7 +147,7 @@ else:
 files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
 
 # -> list of save path
-path_save_interp1D = './'           # where to save interpolated (on model dt) currents
+path_save_interped = './'           # where to save interpolated (on model dt) currents
 
 dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
                                         {
@@ -187,8 +190,12 @@ point_loc = point_loc_source[SOURCE]
 print('')
 print('*********************************')
 print('* SOURCE     = '+SOURCE)
-print('* MODE       = 1D')
-print('*    LOCATION [W,E]= '+str(point_loc))
+print('* MODE       = '+MODE)
+if MODE=='1D':
+    print('*    LOCATION [W,E]= '+str(point_loc))
+elif MODE=='2D':
+    print('*    LAT_BOUNDS (°E) = '+str(LAT_bounds))
+    print('*    LON_BOUNDS (°N) = '+str(LON_bounds))
 print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
 print('* JAXIFY     = '+str(JAXIFY))
 print('*********************************')
@@ -227,11 +234,11 @@ if __name__ == "__main__":
     ## INTERPOLATION 
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
-    print('* Interpolation on unsteady ekman model timestep')
+    print('* Interpolation on unsteady ekman model timestep 1D')
     files_list_all = files_dict[SOURCE]['files_sfx']
     model_source = Model_source_OSSE(SOURCE, files_list_all)
         
-    interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interp1D)
+    interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interped)
     (nameLon_u, nameLon_v, nameLon_rho,
      nameLat_u, nameLat_v, nameLat_rho, 
      nameSSH, nameU, nameV, nameTime,
@@ -1064,9 +1071,21 @@ if __name__ == "__main__":
     if TEST_JUNSTEK1D_KT_SPATIAL:
         """
         """
-        # -50.,35.
+        # 5°x5°,dt=1h -> 3Go
+        # 5°x5°,dt=1min -> 3*60=180Go
+        
+        # LON_bounds = [-55.,-54.]
+        # LAT_bounds = [30.,31.]
+        N_CPU = 1
+        
+        
+        # building 2D+time file on Junstek_Kt_spatial time grid
+        print('* Interpolation on unsteady ekman model timestep 2D')
+        interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
+        
+        
         file = '' # TBD
-        forcing2D = Forcing2D(dt,[-55,-50],[30,35],file,TRUE_WIND_STRESS)
+        #forcing2D = Forcing2D(dt,[-55,-50],[30,35],file,TRUE_WIND_STRESS)
         
     
     # execution benchmark   
