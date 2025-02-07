@@ -58,7 +58,7 @@ start = clock.time()
 DASHBOARD   = False     # when using dask
 N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = True      # on HPC
+ON_HPC      = False      # on HPC
 
 # -> area of interest
 # 1D
@@ -1097,7 +1097,7 @@ if __name__ == "__main__":
         
         forcing2D = Forcing2D(dt_forcing,file,TRUE_WIND_STRESS)
         observations2D = Observation1D(period_obs, dt, file)
-        model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, dT=dT)
+        model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, observation=observations2D, dT=dT)
         var = Variational(model, observations2D)
         
         vector_kt = model.kt_ini(vector_k)

@@ -472,7 +472,7 @@ class jUnstek1D_Kt_spatial:
     
     Written in JAX formalism.
     """
-    def __init__(self, dt, Nl, forcing, dT):
+    def __init__(self, dt, Nl, forcing, observation, dT):
         """
         dt : model time step
         Nl : number of layers
@@ -486,7 +486,8 @@ class jUnstek1D_Kt_spatial:
         self.dt_forcing = forcing.dt_forcing # 1 hour
         self.dt = int(dt) # dt seconds
         self.ntm = forcing.time[-1]//dt
-        self.forcing_time = forcing.time
+        self.ntobs = forcing.time[-1]//dt
+        self.forcing_time = forcing.time//observation.obs_period
         self.model_time = jnp.arange(0,self.ntm,1)
         # forcing
         self.TA = jnp.asarray(forcing.TAx) + 1j*jnp.asarray(forcing.TAy) # wind = windU + j*windV
@@ -676,7 +677,7 @@ class jUnstek1D_Kt_spatial:
                             arg1)           
         return it, K, U
 
-    def do_forward(self, pk):
+    def do_forward(self, pk, save_all_dt=False):
         """
         Unsteady Ekman model forward model
 
@@ -684,7 +685,7 @@ class jUnstek1D_Kt_spatial:
 
         INPUT:
         - pk     : list of boundaries of layer(s)
-        - U0    : initial value of complex current
+        - save_all_dt: bool, save all timestep or only at observation time
         OUTPUT:
         - array of surface current
 
@@ -696,9 +697,28 @@ class jUnstek1D_Kt_spatial:
         #jax.debug.print('pk = {}',pk)
 
         # starting from nul current
-        U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        #U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        # ici pas besoin de save tous les pas de temps pour la fonction cout !
+        # (pour obtenir une trajectoire si, quand le K est final)
+        if save_all_dt:
+            U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        else:
+            U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        
         print(U.shape)
         print(U.dtype)
+        
+        # i need to fill in U only at
+        #   dt if save_all_dt=True
+        #   obs_dt if save_all_dt=False
+        
+        # -> voir la fonction step (obs_dt) et one_step (dt) dans MSHH de Florian
+        # https://github.com/leguillf/MASSH/blob/main/mapping/src/tools_4Dvar.py
+        
+        # autre possibilité : 
+        # https://docs.kidger.site/diffrax/
+        raise Exception
+        
         K = self.K_transform(pk) # optimize inverse problem
         K = K.reshape((self.NdT,self.nl*2))
         if K.shape[-1]//2!=self.nl:
@@ -713,6 +733,7 @@ class jUnstek1D_Kt_spatial:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
             _, _, U = lax.fori_loop(0,self.ntm,self.__one_step,arg0)
+            # here lets try with 'scan'
             
         self.Ur_traj = U
         self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
