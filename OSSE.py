@@ -9,6 +9,7 @@ from datetime import timedelta
 import matplotlib.pyplot as plt
 import warnings
 import dask.array as da
+from memory_profiler import profile
 
 from filters import *
 from tools import *
@@ -92,7 +93,7 @@ class Model_source_OSSE:
             #   because else it cannot write the whole file
             #   but they can be accessed with the original file.
             #   and we dont need them at every dt, and also no need to have the smoothed version.
-            self.dataset = self.dataset.drop_vars(['MLD','temp','salt','frsh_water_net','Heat_flx_net','SW_rad'])
+            #self.dataset = self.dataset.drop_vars(['MLD','temp','salt','frsh_water_net','Heat_flx_net','SW_rad'])
             
             if 'nav_lat_rho' in self.dataset.variables:
                 self.dataset = self.dataset.rename({
@@ -335,7 +336,11 @@ def interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_s
         - a netcdf file with time interpolated on a 2D grid comprised in between LON_bounds and LAT_bounds, 
             for ageo currents, geo current, SSH, MLD, stress, fluxes
             
-    Note : tested for model_source.source=='Croco' (C grid)
+    Note : 
+        - tested for model_source.source=='Croco' (C grid)
+        - output is not interpolate on 'dt' timestep, 
+            the interpolation is done on the fly during model integration
+            (memory constrain)
     """
     final_time_chunk = 500
     
@@ -511,38 +516,23 @@ def interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_s
     ds[nameU].attrs['long_name'] = 'Ageo '+ds[nameU].attrs['long_name']
     ds[nameV].attrs['long_name'] = 'Ageo '+ds[nameV].attrs['long_name']
     
-    # chunking the array we worked on to be able to write in //
-    # chunks = ds[nameSSH].chunks
-    # for varname in [nameU,nameV,'Ug','Vg','SSH_LS']:
-    #     print('chunking ',varname)
-    #     ds[varname] = ds[varname].chunk(chunks=chunks)
-    # print(ds)
-    # raise Exception     
-    # new time vector
     print('     -> interp on model time vector')
-    #ds = ds.chunk({nameTime:200})
-    #print(ds)
-    time = np.arange(ds[nameTime].values[0], ds[nameTime].values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
-    time_chunked = xr.DataArray(data = da.from_array(time, chunks=100), dims=nameTime)
-    print(time_chunked)
-    ds_i = ds.interp({nameTime:time_chunked},method=method) # linear interpolation in time   
+    ds_i = ds
+    print(ds_i)
+    # this is done during the model integration !
+    # because what would be done (see below) consumes too much memory (scipy.interpn behind xr.interp)
     
-    # here i need to interp piece by piece.
+    #newtime = np.arange(ds[nameTime].values[0], ds[nameTime].values[-1], timedelta(seconds=dt),dtype='datetime64[ns]')
+    # ds_i = ds.interp({nameTime:newtime},method=method) 
+    
     # a xarray.dataarray.interp on chunk dim is not yet supported and it seems hard to implement.
     # ongoing since 2020
     # see https://github.com/pydata/xarray/pull/4155
     # and https://github.com/pydata/xarray/issues/6799
     
-    
-    
-    # time vector is huge now so we chunk
-    #ds_i = ds_i.chunk(chunks={nameTime:final_time_chunk})
-    print(ds_i)
-    
-    U = ds_i.U.load()
-    print_memory_array(ds_i,'U')
-    print_memory_chunk(ds_i,'U')
-    raise Exception
+    #print_memory_array(ds_i,'U')
+    #print_memory_chunk(ds_i,'U')
+
     # adding the stress to the variables
     # stress as: C x wind**2
     if model_source.source == 'MITgcm':
@@ -576,23 +566,24 @@ def interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_s
     ds_i.attrs['model_source'] = model_source.source
     
     # writing in time chunk to fit in memory
-    # -> this create the structure
-    ds_template = ds_i.drop_vars([var for var in ds_i.variables if var not in ['lat','lon']])
-    ds_template.to_zarr(name_save+'.zarr', compute=False) 
-    # # -> this is to write variables independant of time
+    # if the file is huge
+    #   -> this create the structure
+    # ds_template = ds_i.drop_vars([var for var in ds_i.variables if var not in ['lat','lon']])
+    # ds_template.to_zarr(name_save+'.zarr', compute=False) 
+    #   -> this is to write variables independant of time
     # ds_template = ds_template
     # print(ds_template)
     # ds_template.to_zarr(name_save+'.zarr', mode='a')
-    # -> writing the other variables in time chunks
-    ds_i = ds_i.drop_vars(['lat','lon'])
-    Nchunk_time = len(ds_i[nameTime]) // final_time_chunk+1
-    for j in range(0,len(ds_i[nameTime]),final_time_chunk):
-        print('     time chunk '+str(j)+'/'+str(Nchunk_time))
-        temp = ds_i.isel(time=slice(j, j+final_time_chunk)).load()
-        temp.to_zarr(name_save+'.zarr', region={'time': slice(j, j+final_time_chunk)}, mode='a')
+    #   -> writing the other variables in time chunks
+    # ds_i = ds_i.drop_vars(['lat','lon'])
+    # Nchunk_time = len(ds_i[nameTime]) // final_time_chunk+1
+    # for j in range(0,len(ds_i[nameTime]),final_time_chunk):
+    #     print('     time chunk '+str(j)+'/'+str(Nchunk_time))
+    #     temp = ds_i.isel(time=slice(j, j+final_time_chunk)).load()
+    #     temp.to_zarr(name_save+'.zarr', region={'time': slice(j, j+final_time_chunk)}, mode='a')
     
-    #ds_i.to_zarr(name_save+'.zarr',mode='w') # this exceed memory limit
-    #ds_i.to_netcdf(path=name_save+'.nc',mode='w') # this exceed memory limit
+    # if the file isnt huge
+    ds_i.to_netcdf(path=name_save+'.nc',mode='w')
     
     # note on this: xarray/dask should be able to do to_netcdf in one go if dataset is chunked...
     

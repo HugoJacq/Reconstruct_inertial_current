@@ -16,6 +16,8 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # for jax
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
 #print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+os.environ['XLA_GPU_MEMORY_LIMIT_SLOP_FACTOR'] = '50'
 
 import time as clock
 import scipy.optimize as opt
@@ -176,51 +178,50 @@ dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
 
 # END PARAMETERS #################################
 ##################################################
-if SOURCE=='Crocco':
-    SOURCE='Croco'
-if JAXIFY:
-    nameJax = 'JAX_'
-else:
-    nameJax = ''
-if SOURCE=='Croco':
-    TRUE_WIND_STRESS = True
-    
-point_loc = point_loc_source[SOURCE]
-
-print('')
-print('*********************************')
-print('* SOURCE     = '+SOURCE)
-print('* MODE       = '+MODE)
-if MODE=='1D':
-    print('*    LOCATION [W,E]= '+str(point_loc))
-elif MODE=='2D':
-    print('*    LAT_BOUNDS (°E) = '+str(LAT_bounds))
-    print('*    LON_BOUNDS (°N) = '+str(LON_bounds))
-print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
-print('* JAXIFY     = '+str(JAXIFY))
-print('*********************************')
-print('')
-# where to save pngs for 1D study
-path_save_png1D = './png_1D/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#
-path_save_png1D += SOURCE+'/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#
-path_save_png1D += 'LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#   
-if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
-else: path_save_png1D += 'stress_UU/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-
-
-
-
 # MAIN LOOP
 # This avoids infinite subprocess creation
 if __name__ == "__main__":  
     
+    
+    if SOURCE=='Crocco':
+        SOURCE='Croco'
+    if JAXIFY:
+        nameJax = 'JAX_'
+    else:
+        nameJax = ''
+    if SOURCE=='Croco':
+        TRUE_WIND_STRESS = True
+        
+    point_loc = point_loc_source[SOURCE]
+
+    print('')
+    print('*********************************')
+    print('* SOURCE     = '+SOURCE)
+    print('* MODE       = '+MODE)
+    if MODE=='1D':
+        print('*    LOCATION [W,E]= '+str(point_loc))
+    elif MODE=='2D':
+        print('*    LAT_BOUNDS (°E) = '+str(LAT_bounds))
+        print('*    LON_BOUNDS (°N) = '+str(LON_bounds))
+    print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
+    print('* JAXIFY     = '+str(JAXIFY))
+    print('*********************************')
+    print('')
+    # where to save pngs for 1D study
+    path_save_png1D = './png_1D/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #
+    path_save_png1D += SOURCE+'/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #
+    path_save_png1D += 'LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #   
+    if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
+    else: path_save_png1D += 'stress_UU/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+
+
     global client
     client = None
     if DASHBOARD:
@@ -239,6 +240,10 @@ if __name__ == "__main__":
     model_source = Model_source_OSSE(SOURCE, files_list_all)
         
     interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interped)
+    print('* Interpolation on unsteady ekman model timestep 2D')
+    # building 2D+time file on Junstek_Kt_spatial time grid
+    interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
+        
     (nameLon_u, nameLon_v, nameLon_rho,
      nameLat_u, nameLat_v, nameLat_rho, 
      nameSSH, nameU, nameV, nameTime,
@@ -1025,7 +1030,8 @@ if __name__ == "__main__":
         #vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
         Nl = len(vector_k)//2
-        model = jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)
+        forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
+        model = jUnstek1D_Kt(Nl, forcing=forcing1D, dT=dT)
         var = Variational(model, observations)
         
         print('* test junstek1D_kt '+str(Nl)+' layers')
@@ -1077,16 +1083,59 @@ if __name__ == "__main__":
         # LON_bounds = [-55.,-54.]
         # LAT_bounds = [30.,31.]
         N_CPU = 1
+        Nl = 1
+        dT = 3*86400 # s
+        dt_forcing = 3600 # s
+        dt = 3600 # model timestep
+        if Nl==1:
+            vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        if Nl==2:
+            vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+ 
+        print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
+        file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
         
+        forcing2D = Forcing2D(dt_forcing,file,TRUE_WIND_STRESS)
+        observations2D = Observation1D(period_obs, dt, file)
+        model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, dT=dT)
+        var = Variational(model, observations2D)
         
-        # building 2D+time file on Junstek_Kt_spatial time grid
-        print('* Interpolation on unsteady ekman model timestep 2D')
-        interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
+        vector_kt = model.kt_ini(vector_k)
+        vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
+
+        t1 = clock.time()
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        t2 = clock.time()
+        print('time, forward model (with compile)',t2-t1)
         
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
+    
+        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
+            
+        print_info(var.cost,res)
+        vector_kt_1D = res['x']
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
-        file = '' # TBD
-        #forcing2D = Forcing2D(dt,[-55,-50],[30,35],file,TRUE_WIND_STRESS)
-        
+        RMSE = score_RMSE(Ua, U) 
+        print('RMSE is',RMSE)
+        # PLOT trajectory
+        plt.figure(figsize=(10,3),dpi=dpi)
+        plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
+        plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
+        plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(res['x']),4)))
+        plt.xlabel('Time (days)')
+        plt.ylabel('Ageo zonal current (m/s)')
+        plt.legend(loc=1)
+        plt.tight_layout()
+        plt.savefig('JAX_test_junstek1D_kt_spatial_'+str(Nl)+'layers.png')
     
     # execution benchmark   
     if BENCHMARK_ALL:
