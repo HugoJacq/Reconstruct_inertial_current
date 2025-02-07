@@ -518,7 +518,7 @@ def interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_s
     
     print('     -> interp on model time vector')
     ds_i = ds
-    print(ds_i)
+    #print(ds_i)
     # this is done during the model integration !
     # because what would be done (see below) consumes too much memory (scipy.interpn behind xr.interp)
     

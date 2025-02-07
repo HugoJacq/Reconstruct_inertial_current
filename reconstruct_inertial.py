@@ -58,7 +58,7 @@ start = clock.time()
 DASHBOARD   = False     # when using dask
 N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = False      # on HPC
+ON_HPC      = True      # on HPC
 
 # -> area of interest
 # 1D
@@ -119,7 +119,7 @@ if ON_HPC:
                             'filesD': np.sort(glob.glob("/data2/nobackup/clement/Data/Llc2160/llc2160_daily_latlon_KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
                             'filesTau': np.sort(glob.glob("/data2/nobackup/clement/Data/Llc2160/llc2160_daily_latlon_wind/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
                             },
-                'Croco':{'surface':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc',
+                'Croco':{'surface':[#'/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc',
                                     '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'],
                             '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                                 '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
