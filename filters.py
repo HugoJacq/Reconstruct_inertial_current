@@ -22,8 +22,10 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     cf=np.exp(-(x**2/sigmax**2+y**2/sigmay**2))
     m=~np.isnan(s)*1.
     s = np.where(np.isnan(s),0,s)
-    s_sum = (sp.signal.convolve2d(s, cf, mode='same'))
-    w_sum = (sp.signal.convolve2d(m, cf, mode='same'))
+    # s_sum = (sp.signal.convolve2d(s, cf, mode='same'))
+    # w_sum = (sp.signal.convolve2d(m, cf, mode='same'))
+    s_sum = sp.signal.oaconvolve(s, cf, mode='same')
+    w_sum = sp.signal.oaconvolve(m, cf, mode='same')
     sf = s*0.
     sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
     return sf
@@ -62,11 +64,42 @@ def mytimefilter(Hf0):
     # doing the convolution in time
     for ix in range(nx):
         for iy in range(ny):
-            Hf[:,iy,ix] = np.convolve(Hf0[:,iy,ix],gl,'same')
+            #Hf[:,iy,ix] = np.convolve(Hf0[:,iy,ix],gl,'same')
+            Hf[:,iy,ix] = sp.signal.oaconvolve(Hf0[:,iy,ix],gl, mode='same')
     return Hf
 
+def mytimefilter1D(Hf0):
+    """
+    Smoothing filter on 1D array
+    input is dt=1h
+    """
+    time_conv = np.arange(-1*86400,1*86400+3600,3600) # 1D array, time boundaries for kernel (in sec)
+    # time kernel for convolution
+    taul = 2*86400
+    gl = np.exp(-taul**-2 * time_conv**2) 
+    gl = (gl / np.sum(np.abs(gl)))
+    #Hf = np.convolve(Hf0[:],gl,'same')
+    Hf = sp.signal.oaconvolve(Hf0[:],gl, mode='same')
+    return Hf
 
-
+def mytimefilter_over_spatialXY(Hf0, N_CPU):
+    """
+    'mytimefilter1D' but over XY
+    
+    Hf0 of the form (t,y,x), dt=1h
+    """
+    Hf = Hf0*0. # initialization
+    nt, ny, nx = np.shape(Hf0) # shape of array
+     
+    if N_CPU<=1:
+        for ix in range(nx):
+            for iy in range(ny):
+                Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix]) 
+    else:
+        
+        results = Parallel(n_jobs=N_CPU)(delayed(mytimefilter1D)(Hf0[:,iy,ix]) for ix in range(nx) for iy in range(ny))
+        Hf = np.asarray(results, dtype=float).reshape((nt,ny,nx))
+    return Hf
 #
 # ATTEMPT TO USE XARRAY AND BUILD A XR CONVOLUTION
 #

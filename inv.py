@@ -41,7 +41,10 @@ class Variational:
     """
     def __init__(self, model, observations):
         self.inJax = model.isJax
-        self.Ri = model.Ri
+        Co = observations.get_obs()
+        self.Uo = Co[0]
+        self.Vo = Co[1]
+        self.Ri = self.Uo*0.+1
         self.observations = observations
         self.obs_period = observations.obs_period
         self.model_dt = model.dt
@@ -121,8 +124,8 @@ class Variational:
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
         
-        A = jnp.zeros( len(self.observations.time_obs), dtype='float64')
-        B = jnp.zeros( len(self.observations.time_obs), dtype='float64')
+        A = jnp.zeros( self.Uo.shape, dtype='float64')
+        B = jnp.zeros( self.Uo.shape, dtype='float64')
         #with warnings.catch_warnings(action="ignore"): # dont show overflow results
         A = A.at[:].set(U[::self.obs_period//self.model_dt])
         B = B.at[:].set(V[::self.obs_period//self.model_dt])
@@ -169,7 +172,7 @@ class Variational:
         """
         N, Nl2 = jnp.shape(array_pk) # squared number of vector k, size of vector k
         Nchange = 2 # number of component of vector k that change
-        Nl = jnp.sqrt(Nl2)
+        Nl = Nl2//2
         
         sizeN = jnp.sqrt(array_pk.shape[0]).astype(int)
         Jshape = tuple([sizeN]*Nchange)

@@ -13,9 +13,11 @@ Updates:
 import os
 #os.environ["OMP_NUM_THREADS"] = "1" # force mono proc
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # for jax
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
 #print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+os.environ['XLA_GPU_MEMORY_LIMIT_SLOP_FACTOR'] = '50'
 
 import time as clock
 import scipy.optimize as opt
@@ -54,20 +56,24 @@ start = clock.time()
 ###############################################
 # //
 DASHBOARD   = False     # when using dask
-N_CPU       = 1         # when using joblib, if >1 then use // code
+N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = True      # on HPC
+ON_HPC      = False      # on HPC
+
 # -> area of interest
-# -> index for spatial location. We work in 1D
+# 1D
 point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
                     'Croco':[-50.,35.]}
- 
+# 2D
+LON_bounds = [-55.,-50.]
+LAT_bounds = [30.,35.]
 
 # -> Observations : OSSE
 SOURCE              = 'Croco'   # MITgcm Croco
 TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
 dt                  = 60        # timestep of the model (s) 
 period_obs          = 86400     # s, how many second between observations
+MODE                = '2D'      # '1D' or '1D_kt' or '2D'
 
 # -> LAYER DEFINITION
 #        number of values = number of layers
@@ -88,14 +94,14 @@ MAP_1D_LOCATION         = False     # plot a map to show where we are working
 MINIMIZE                = False     # find the vector K starting from 'pk'
 PLOT_TRAJECTORY         = False     # plot u(t) for a specific vector_k
 ONE_LAYER_COST_MAP      = False     # maps the cost function values
-TWO_LAYER_COST_MAP_K1K2 = True     # maps the cost function values, K0 K4 fixed
+TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
 
 # tests
-TEST_ROTARY_SPECTRA     = False
-TEST_JUNSTEK1D_KT       = False 
-
+TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
+TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
 BENCHMARK_ALL           = False     # performance benchmark
 
     
@@ -113,28 +119,37 @@ if ON_HPC:
                             'filesD': np.sort(glob.glob("/data2/nobackup/clement/Data/Llc2160/llc2160_daily_latlon_KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
                             'filesTau': np.sort(glob.glob("/data2/nobackup/clement/Data/Llc2160/llc2160_daily_latlon_wind/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
                             },
-                'Croco':{'surface':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
-                                    '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc'],
+                'Croco':{'surface':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc',
+                                    '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'],
                             '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                                 '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
                 }
+    files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
+                                    list(files_dict['MITgcm']['filesH']) + 
+                                    list(files_dict['MITgcm']['filesW']) + 
+                                    list(files_dict['MITgcm']['filesD']) + 
+                                    list(files_dict['MITgcm']['filesTau']) )
 # Local
 else:
-    files_dict = {"MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
-                            'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
-                            'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
-                            'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
-                            'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
-                            },
+    if SOURCE=='MITgcm':
+        raise Exception('No data on local laptop, please use HPC or download the data')
+    files_dict = {
+                # "MITgcm":{'filesUV': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/U_V/llc2160_2020-11-*_SSU-SSV.nc")),
+                #             'filesH': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/SSH/llc2160_2020-11-*_SSH.nc")),
+                #             'filesW': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/v10m/llc2160_2020-11-*_v10m.nc")),
+                #             'filesD': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/KPPhbl/llc2160_2020-11-*_KPPhbl.nc")),
+                #             'filesTau': np.sort(glob.glob("/home/jacqhugo/Datlas_2025/DATA/oceTau/llc2160_2020-11-*_oceTAUX-oceTAUY.nc")),
+                #             },
                 'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
                             '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
                                 '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},
                 }    
 
-
+# concatenate files
+files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
 
 # -> list of save path
-path_save_interp1D = './'           # where to save interpolated (on model dt) currents
+path_save_interped = './'           # where to save interpolated (on model dt) currents
 
 dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
                                         {
@@ -163,53 +178,50 @@ dico_pk_solution ={'MITgcm':{'[-24.8, 45.2]':
 
 # END PARAMETERS #################################
 ##################################################
-if SOURCE=='Crocco':
-    SOURCE='Croco'
-if JAXIFY:
-    nameJax = 'JAX_'
-else:
-    nameJax = ''
-if SOURCE=='Croco':
-    TRUE_WIND_STRESS = True
-    
-point_loc = point_loc_source[SOURCE]
-
-print('')
-print('*********************************')
-print('* SOURCE     = '+SOURCE)
-print('* MODE       = 1D')
-print('*    LOCATION [W,E]= '+str(point_loc))
-print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
-print('* JAXIFY     = '+str(JAXIFY))
-print('*********************************')
-print('')
-# where to save pngs for 1D study
-path_save_png1D = './png_1D/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#
-path_save_png1D += SOURCE+'/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#
-path_save_png1D += 'LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-#   
-if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
-else: path_save_png1D += 'stress_UU/'
-if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
-
-# concatenate files
-files_dict['MITgcm']['files_sfx'] = ( list(files_dict['MITgcm']['filesUV']) + 
-                                    list(files_dict['MITgcm']['filesH']) + 
-                                    list(files_dict['MITgcm']['filesW']) + 
-                                    list(files_dict['MITgcm']['filesD']) + 
-                                    list(files_dict['MITgcm']['filesTau']) )
-files_dict['Croco']['files_sfx'] = files_dict['Croco']['surface']
-
-
 # MAIN LOOP
 # This avoids infinite subprocess creation
 if __name__ == "__main__":  
     
+    
+    if SOURCE=='Crocco':
+        SOURCE='Croco'
+    if JAXIFY:
+        nameJax = 'JAX_'
+    else:
+        nameJax = ''
+    if SOURCE=='Croco':
+        TRUE_WIND_STRESS = True
+        
+    point_loc = point_loc_source[SOURCE]
+
+    print('')
+    print('*********************************')
+    print('* SOURCE     = '+SOURCE)
+    print('* MODE       = '+MODE)
+    if MODE=='1D':
+        print('*    LOCATION [W,E]= '+str(point_loc))
+    elif MODE=='2D':
+        print('*    LAT_BOUNDS (°E) = '+str(LAT_bounds))
+        print('*    LON_BOUNDS (°N) = '+str(LON_bounds))
+    print('* TRUE WINDSTRESS = '+str(TRUE_WIND_STRESS))
+    print('* JAXIFY     = '+str(JAXIFY))
+    print('*********************************')
+    print('')
+    # where to save pngs for 1D study
+    path_save_png1D = './png_1D/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #
+    path_save_png1D += SOURCE+'/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #
+    path_save_png1D += 'LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+    #   
+    if TRUE_WIND_STRESS or SOURCE=='Croco': path_save_png1D += 'stress_Tau/'
+    else: path_save_png1D += 'stress_UU/'
+    if not os.path.isdir(path_save_png1D): os.system('mkdir '+path_save_png1D)
+
+
     global client
     client = None
     if DASHBOARD:
@@ -223,11 +235,15 @@ if __name__ == "__main__":
     ## INTERPOLATION 
     # This is interpolation on reconstructed time grid (every dt)
     # this is necessary for the simple model 'unstek'
-    print('* Interpolation on unsteady ekman model timestep')
+    print('* Interpolation on unsteady ekman model timestep 1D')
     files_list_all = files_dict[SOURCE]['files_sfx']
     model_source = Model_source_OSSE(SOURCE, files_list_all)
         
-    interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interp1D)
+    interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interped)
+    print('* Interpolation on unsteady ekman model timestep 2D')
+    # building 2D+time file on Junstek_Kt_spatial time grid
+    interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
+        
     (nameLon_u, nameLon_v, nameLon_rho,
      nameLat_u, nameLat_v, nameLat_rho, 
      nameSSH, nameU, nameV, nameTime,
@@ -681,32 +697,35 @@ if __name__ == "__main__":
         # LAYER DEFINITION
         # -> number of values = number of layers
         # -> values = turbulent diffusion coefficient
-        """
-        with Cd.U**2:
-            vecteur solution :  [ -3.47586165  -9.06189063 -11.22302904 -12.43724667]
-            cost function value : 0.28825167461378703
-        with true Tau:
-            vecteur solution :  [ -9.14721791, -8.79469884, -11.20512638, -12.5794675]
-            cost function value : 0.24744266411643656
-        """
-        PARALLEL = True
         step = 1 # 0.25
+        kmin,kmax = -28, -4.5
         Jmap_cmap = 'terrain'
+        Nl = 2
+        
         if TRUE_WIND_STRESS:
-            k0 = -9.14721791
-            k3 = -12.5794675
-            k1_mini = -8.79469884
-            k2_mini = -11.20512638
-            kmin,kmax = -15, -1
+            pk_sol = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['TRUE_TAU']
         else:
-            k0 = -3.47586165
-            k3 = -12.43724667
-            k1_mini = -9.06189063
-            k2_mini = -11.22302904
-            kmin,kmax = -15, -4
+            pk_sol = dico_pk_solution[SOURCE][str(point_loc)][str(Nl)]['Cd.UU']
+        
+        k0 = pk_sol[0]
+        k1_mini = pk_sol[1]
+        k2_mini = pk_sol[2]
+        k3 = pk_sol[3]
+        
+        #     k0 = -9.14721791
+        #     k3 = -12.5794675
+        #     k1_mini = -8.79469884
+        #     k2_mini = -11.20512638
+        #     kmin,kmax = -20, -1
+        # else:
+        #     k0 = -3.47586165
+        #     k3 = -12.43724667
+        #     k1_mini = -9.06189063
+        #     k2_mini = -11.22302904
+        #     kmin,kmax = -20, -4
         
         tested_values = np.arange(kmin,kmax,step)
-        Nl = 2
+        
         if JAXIFY: model = jUnstek1D(Nl, forcing, observations)
         else: model = Unstek1D(Nl, forcing, observations)
         var = Variational(model, observations)
@@ -740,19 +759,7 @@ if __name__ == "__main__":
                         print('     ',j)
                         vector_k0k1 = np.array([k0,k1,k2,k3])
                         J[j,i] = var.cost(vector_k0k1)
-    
-        # if N_CPU>1:
-        #     J = Parallel(n_jobs=N_CPU)(delayed(
-        #             var.cost)(np.array([k0,k1,k2,k3]))
-        #                             for k1 in tested_values for k2 in tested_values)
-        #     J = np.transpose(np.reshape(np.array(J),(len(tested_values),len(tested_values)) ))
-        # else:
-        #     J = np.zeros((len(tested_values),len(tested_values)))
-        #     for i,k1 in enumerate(tested_values):
-        #         for j,k2 in enumerate(tested_values):
-        #             vector_k = np.array([k0,k1,k2,k3])
-        #             J[j,i] = var.cost(vector_k)
-        
+            
         # plotting
         cmap = mpl.colormaps.get_cmap(Jmap_cmap)
         cmap.set_bad(color='indianred')
@@ -839,7 +846,6 @@ if __name__ == "__main__":
         print('     K1=',Kz1,'m2/s')
         print('     K2=',Kz2,'m2/s')
     
-
     # check of minimum, starting at corner of an hypercube
     #   for the two layer model
     if CHECK_MINI_HYPERCUBE:
@@ -895,57 +901,62 @@ if __name__ == "__main__":
                        'pk2':[-27.5, -18.5],
                        'pk3':[-27, -17.5]  }
 
-        model = jUnstek1D(2, forcing, observations)
-        var = Variational(model, observations)
-        
-        solution = np.zeros((2**4,2,4)) # n° corner, (ini,final), vector_k
-        nIter = np.zeros((2**4))     
-        nCost = np.zeros((2**4))         
-        npk = 0
-        # looping over all corners of the hypercube
-        for pk0 in dico_bounds['pk0']:
-            for pk1 in dico_bounds['pk1']:
-                for pk2 in dico_bounds['pk2']:
-                    for pk3 in dico_bounds['pk3']:
-                        pk = jnp.asarray([pk0,pk1,pk2,pk3])
-                        res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
-                            method='L-BFGS-B',
-                            jac=var.grad_cost,
-                            options={'disp': True, 'maxiter': maxiter})
 
-                        solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
-                        solution[npk,1,:] = res['x']
-                        nIter[npk] = res.nit
-                        nCost[npk] = var.cost(jnp.asarray(res['x']))
-  
-                        print('corner n°'+str(npk))
-                        print('     pk(ini) =',solution[npk,0,:])
-                        print('     pk(end) =',solution[npk,1,:])
-                        print('       niter =',nIter[npk])
-                        print('        cost =',nCost[npk])
-                        npk+=1
-                        
-        # writing in the file
         name_hypercube = 'results_hypercube_'+SOURCE+'_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])
-        with open(name_hypercube+".txt", "w") as f:     
-            f.write("* HEADER ========================================\n")
-            f.write('* MODEL = '+str(SOURCE)+'\n')
-            f.write('* LOCATION = LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'\n')
-            f.write('*\n')
-            f.write('* num of corner'+'\n')
-            f.write('* pk(ini)'+'\n')
-            f.write('* pk(end)'+'\n')
-            f.write('* niter'+'\n')
-            f.write('* cost'+'\n')
-            f.write('* ===============================================\n')
-            for npk in range(solution.shape[0]):
-                f.write(str(npk)+'\n')
-                f.write(str(solution[npk,0,:])+'\n')
-                f.write(str(solution[npk,1,:])+'\n')
-                f.write(str(nIter[npk])+'\n')
-                f.write(str(nCost[npk])+'\n')
+        if pathlib.Path(name_hypercube).is_file():
+            print(' file with hypercube results is here')
+        else:
+            model = jUnstek1D(2, forcing, observations)
+            var = Variational(model, observations)
             
+            solution = np.zeros((2**4,2,4)) # n° corner, (ini,final), vector_k
+            nIter = np.zeros((2**4))     
+            nCost = np.zeros((2**4))         
+            npk = 0
+            # looping over all corners of the hypercube
+            for pk0 in dico_bounds['pk0']:
+                for pk1 in dico_bounds['pk1']:
+                    for pk2 in dico_bounds['pk2']:
+                        for pk3 in dico_bounds['pk3']:
+                            pk = jnp.asarray([pk0,pk1,pk2,pk3])
+                            res = opt.minimize(var.cost, pk, args=(save_iter), # , args=(Uo, Vo, Ri)
+                                method='L-BFGS-B',
+                                jac=var.grad_cost,
+                                options={'disp': True, 'maxiter': maxiter})
+
+                            solution[npk,0,:] = np.asarray([pk0,pk1,pk2,pk3])
+                            solution[npk,1,:] = res['x']
+                            nIter[npk] = res.nit
+                            nCost[npk] = var.cost(jnp.asarray(res['x']))
+    
+                            print('corner n°'+str(npk))
+                            print('     pk(ini) =',solution[npk,0,:])
+                            print('     pk(end) =',solution[npk,1,:])
+                            print('       niter =',nIter[npk])
+                            print('        cost =',nCost[npk])
+                            npk+=1
+                            
+            # writing in the file
+            with open(name_hypercube+".txt", "w") as f:     
+                f.write("* HEADER ========================================\n")
+                f.write('* MODEL = '+str(SOURCE)+'\n')
+                f.write('* LOCATION = LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'\n')
+                f.write('*\n')
+                f.write('* num of corner'+'\n')
+                f.write('* pk(ini)'+'\n')
+                f.write('* pk(end)'+'\n')
+                f.write('* niter'+'\n')
+                f.write('* cost'+'\n')
+                f.write('* ===============================================\n')
+                for npk in range(solution.shape[0]):
+                    f.write(str(npk)+'\n')
+                    f.write(str(solution[npk,0,:])+'\n')
+                    f.write(str(solution[npk,1,:])+'\n')
+                    f.write(str(nIter[npk])+'\n')
+                    f.write(str(nCost[npk])+'\n')
             
+        # Getting the values from file        
+           
                       
     # TESTS
     if TEST_ROTARY_SPECTRA:
@@ -1016,12 +1027,14 @@ if __name__ == "__main__":
         
         dT = 3*86400 # s
         vector_k = jnp.asarray([-11.31980127, -10.28525189])
-        vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+        #vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
         Nl = len(vector_k)//2
-        model = jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)
+        forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
+        model = jUnstek1D_Kt(Nl, forcing=forcing1D, dT=dT)
         var = Variational(model, observations)
         
+        print('* test junstek1D_kt '+str(Nl)+' layers')
         # time varying vector_k
         vector_kt = model.kt_ini(vector_k)
         vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
@@ -1031,13 +1044,13 @@ if __name__ == "__main__":
         _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
-        print(t2-t1)
+        print('time, forward model (with compile)',t2-t1)
+        
         _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
         
-        print( clock.time()-t2)
-        
-        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter), # , args=(Uo, Vo, Ri)
+        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
                         method='L-BFGS-B',
                         jac=var.grad_cost,
                         options={'disp': True, 'maxiter': maxiter})
@@ -1054,12 +1067,76 @@ if __name__ == "__main__":
         plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
         plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
         plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
-        #plt.title(title)
+        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(res['x']),4)))
         plt.xlabel('Time (days)')
         plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
         plt.tight_layout()
+        plt.savefig('JAX_test_junstek1D_kt_'+str(Nl)+'layers.png')
         
+    if TEST_JUNSTEK1D_KT_SPATIAL:
+        """
+        """
+        # 5°x5°,dt=1h -> 3Go
+        # 5°x5°,dt=1min -> 3*60=180Go
+        
+        # LON_bounds = [-55.,-54.]
+        # LAT_bounds = [30.,31.]
+        N_CPU = 1
+        Nl = 1
+        dT = 3*86400 # s
+        dt_forcing = 3600 # s
+        dt = 3600 # model timestep
+        if Nl==1:
+            vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        if Nl==2:
+            vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+ 
+        print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
+        file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
+        
+        forcing2D = Forcing2D(dt_forcing,file,TRUE_WIND_STRESS)
+        observations2D = Observation1D(period_obs, dt, file)
+        model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, dT=dT)
+        var = Variational(model, observations2D)
+        
+        vector_kt = model.kt_ini(vector_k)
+        vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
+
+        t1 = clock.time()
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        t2 = clock.time()
+        print('time, forward model (with compile)',t2-t1)
+        
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
+    
+        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
+            
+        print_info(var.cost,res)
+        vector_kt_1D = res['x']
+        _, Ca = model.do_forward_jit(vector_kt_1D)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        
+        RMSE = score_RMSE(Ua, U) 
+        print('RMSE is',RMSE)
+        # PLOT trajectory
+        plt.figure(figsize=(10,3),dpi=dpi)
+        plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
+        plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
+        plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
+        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(res['x']),4)))
+        plt.xlabel('Time (days)')
+        plt.ylabel('Ageo zonal current (m/s)')
+        plt.legend(loc=1)
+        plt.tight_layout()
+        plt.savefig('JAX_test_junstek1D_kt_spatial_'+str(Nl)+'layers.png')
+    
     # execution benchmark   
     if BENCHMARK_ALL:
         print('* Benchmarking ...')       
@@ -1100,10 +1177,10 @@ if __name__ == "__main__":
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
     # - préparation modèle 2D: modele 1D appliqué à une grille 5°/5°
     # - rotary spectra sur un grand domaine spatial pour meilleur convergence
-    # - télécharger fichier janvier Croco (et fichier été ?)
+    # - DONE: télécharger fichier janvier Croco (et fichier été ?)
     # - ekman depth vs MLD: comparer (1D, f(time) )
     #       model simple 2 couches avec K obtenu par minimization
-    #       model simple 100 couchse avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
+    #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
     #       model 3D: MLD basé sur gradient de densité
     
     end = clock.time()

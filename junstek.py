@@ -205,17 +205,14 @@ class jUnstek1D:
         ad_K = adf( (ad_K0, ad_U0) )[0]
         return jnp.real(ad_K)
 
-
 class jUnstek1D_Kt:
     """
     Unsteady Ekman Model 1D, with N layers 
     Vector K change with slowly with time.
     
     Written in JAX formalism.
-    
-    See : https://doi.org/10.3390/rs15184526
     """
-    def __init__(self, Nl, forcing, observations, dT):
+    def __init__(self, Nl, forcing, dT):
         """
         Nl : number of layers
         forcing : class Forcing1D
@@ -230,9 +227,9 @@ class jUnstek1D_Kt:
         self.TA = jnp.asarray(forcing.TAx) + 1j*jnp.asarray(forcing.TAy) # wind = windU + j*windV
         self.fc = jnp.asarray(forcing.fc)  
         # obs
-        Co = observations.get_obs()
-        self.Uo, self.Vo = Co[0], Co[1]
-        self.Ri = self.Uo*0.+1
+        # Co = observations.get_obs()
+        # self.Uo, self.Vo = Co[0], Co[1]
+        # self.Ri = self.Uo*0.+1
         # for reconstructed 
         self.nl = Nl
         self.isJax = True
@@ -454,7 +451,6 @@ class jUnstek1D_Kt:
         K = K.reshape((self.NdT,self.nl*2))
         if K.shape[-1]//2!=self.nl:
            raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
-
         gtime = jnp.asarray(self.forcing_time)
         M = self.pkt2Kt_matrix(gtime=gtime)
         Kt = jnp.dot(M,K)  
@@ -462,6 +458,261 @@ class jUnstek1D_Kt:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
             _, U = lax.fori_loop(0,self.nt,self.__one_step_jit,arg0)
+            
+        self.Ur_traj = U
+        self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
+        
+        return pk, U
+
+class jUnstek1D_Kt_spatial:
+    """
+    Unsteady Ekman Model 1D, with N layers 
+    Vector K changes slowly with time.
+    This is still 1D because the K is the same at all spatial location, it only varies with time.
+    
+    Written in JAX formalism.
+    """
+    def __init__(self, dt, Nl, forcing, dT):
+        """
+        dt : model time step
+        Nl : number of layers
+        forcing : class Forcing1D (on a different timestep)
+        dT : seconds, period of change of K in time
+        """
+        # from dataset
+        self.nt = len(forcing.time)
+        self.nx = forcing.data.sizes['x_rho']
+        self.ny = forcing.data.sizes['y_rho']
+        self.dt_forcing = forcing.dt_forcing # 1 hour
+        self.dt = int(dt) # dt seconds
+        self.ntm = forcing.time[-1]//dt
+        self.forcing_time = forcing.time
+        self.model_time = jnp.arange(0,self.ntm,1)
+        # forcing
+        self.TA = jnp.asarray(forcing.TAx) + 1j*jnp.asarray(forcing.TAy) # wind = windU + j*windV
+        self.fc = jnp.asarray(forcing.fc)  
+        # for reconstructed 
+        self.nl = Nl
+        self.isJax = True
+        # time varying K
+        self.dT = int(dT)
+        self.NdT = int(forcing.time[-1]//dT + 1)
+
+        # JIT compiled functions
+        self.do_forward_jit = jit(self.do_forward)
+        self.K_transform_jit = jit(self.K_transform)
+        self.__one_step_jit = jit(self.__one_step)
+        self.pkt2Kt_matrix_jit = jit(self.pkt2Kt_matrix, static_argnums=0)
+        
+        
+    def K_transform(self, pk, order=0, function='exp'):
+        """
+        Transform the K vector to improve minimization process
+        
+        INPUT:
+            - pk : K vector
+            - order : 1 is derivative
+            - function : string of the name of the function
+        OUTPUT:
+            - f(k) or f'(k)
+        """  
+        if function=='exp':
+            return jnp.exp(pk)
+        else:
+            raise Exception('K_transform function '+function+' is not available, retry')
+    def K_transform_reverse(self, K, function='exp'):
+        """
+        function is the forward function
+        """
+        if function=='exp':
+            return jnp.log(K)
+        else:
+            raise Exception('K_transform_reverse function '+function+' is not available, retry')
+
+    def kt_ini(self,pk):
+        return jnp.array( [pk]*self.NdT)
+    def kt_1D_to_2D(self,vector_kt_1D):
+        return vector_kt_1D.reshape((self.NdT,self.nl*2))
+    def kt_2D_to_1D(self,vector_kt):
+        return vector_kt.flatten()
+
+
+    def __step_pkt2Kt_matrix(self,ip, arg0):
+        gtime,gptime,S,M = arg0
+        distt = (gtime-gptime[ip])
+        tmp =  jnp.exp(-distt**2/self.dT**2)
+        S = lax.add( S, tmp )
+        M = M.at[:,ip].set( M[:,ip] + tmp )
+        return gtime,gptime,S,M
+    def pkt2Kt_matrix(self, gtime):
+        """
+        original numpy function:
+        
+            def pkt2Kt_matrix(dT, gtime):
+                if dT<gtime[-1]-gtime[0] : gptime = numpy.arange(gtime[0], gtime[-1]+dT,dT)
+                else: gptime = numpy.array([gtime[0]])
+                nt=len(gtime)
+                npt = len(gptime)
+                M = numpy.zeros((nt,npt))
+                # Ks=numpy.zeros((ny,nx))
+                S=numpy.zeros((nt))
+                for ip in range(npt):
+                    distt = (gtime-gptime[ip])
+                    iit = numpy.where((numpy.abs(distt) < (3*dT)))[0]
+                    tmp = numpy.exp(-distt[iit]**2/dT**2)
+                    S[iit] += tmp
+                    M[iit,ip] += tmp
+                M = (M.T / S.T).T
+                return M
+        
+        To transform in JAX compatible code, we need to work on array dimensions.
+        Short description of what is done in the first 'if' statement:
+            if we have a period dT shorter than the total time 'gtime',
+                then we create an array with time values spaced by dT.
+                last value if 'gtime[-1]'.
+            else
+                no variation of K along 'gtime' so only 1 vector K
+                
+        Example with nt = 22, with 1 dot is 1 day, dT = 5 days:
+        vector_K :
+            X * * * * * * * * * * * * * * * * * * * * X  # 22 values
+        vector_Kt :
+            X - - - - * - - - - * - - - - * - - - - * X  # 6 values
+        """
+        step = self.dT//self.dt
+        Nstep = self.ntm//step
+        gptime = jnp.zeros( self.ntm//step+1 )        
+        for ipt in range(Nstep):
+            gptime = gptime.at[ipt].set( gtime[ipt*step] )
+
+        gptime = gptime.at[-1].set( lax.select(Nstep>0, gtime[-1]+self.dT, gtime[0]) )
+        gptime = gptime + self.dT
+        nt = len(gtime)
+        npt = len(gptime)
+        M = jnp.zeros((nt,npt))
+        S = jnp.zeros((nt))
+        
+        # loop over each dT
+        arg0 = gtime, gptime, S, M
+        _, _, S, M = lax.fori_loop(0, npt, self.__step_pkt2Kt_matrix, arg0)
+        
+        M = (M.T / S.T).T
+        return M
+
+    def __Onelayer(self, arg1):
+        """
+        1 time iteration of unstek model when 1 layer
+        """
+        it, K, TA, U = arg1
+        ik = 0
+        U = U.at[ik,it+1].set( U[ik, it] + self.dt*( -1j*self.fc*U[ik, it] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik, it]) ) )
+        return it, K, TA, U
+        
+    def __Nlayer_midlayers_for_scan(self,X0,ik):
+        it, K, U = X0
+        U = U.at[ik,it+1].set( U[ik][it] + 
+                                self.dt*( 
+                                    - 1j*self.fc*U[ik, it] 
+                                    - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
+                                    - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+        X = it, K, U
+        return X, X
+        
+    def __Nlayer(self,arg1):
+        """
+        1 time iteration of unstek model when N layer
+        """        
+        
+        it, K, TA,  U = arg1
+        # _, _, U = lax.fori_loop(0,self.nl,self.__do_layer_k,arg1)
+        
+        # surface
+        ik = 0
+        U = U.at[ik, it+1].set( U[ik, it] + 
+                                self.dt*( 
+                                    - 1j*self.fc*U[ik, it] 
+                                    + K[it,2*ik]*TA 
+                                    - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+        # bottom
+        ik = -1
+        U = U.at[ik,it+1].set(  U[ik, it] + 
+                                self.dt*( 
+                                    - 1j*self.fc*U[ik, it] 
+                                    - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
+                                    - K[it,2*ik+1]*U[ik, it] ) )
+        # in between
+        X0 = it, K, U
+        final, _ = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
+        _, _, U = final
+        return it, K, TA, U    
+    
+    def __one_step(self, itm, arg0):
+        """
+        1 model time step advance
+        
+        INPUT:
+        - it: current model time step
+        - arg1: it, K, U at current model time step
+            it: forcing time index
+            K : K vector
+            U: velocity 
+        OUTPUT:
+        - U: updated velocity at next time step 
+        """
+        it, K, U = arg0
+        
+        # on-the-fly (linear) interpolation of forcing
+        aa = jnp.mod(it,self.dt)/self.dt
+        it = lax.select(aa==0,it+1,it) # if aa==0: it += 1
+        itsup = lax.select(it+1>=self.nt, -1, it+1) #if itsup>=self.nt: itsup=-1, else: it+1
+        TA = (1-aa)*self.TA[it,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
+        
+
+        arg1 = itm, K, TA, U
+        # loop on layers
+        _, _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
+                            self.__Onelayer,    # if 1 layer, ik=0
+                            self.__Nlayer,      # else, loop on layers
+                            arg1)           
+        return it, K, U
+
+    def do_forward(self, pk):
+        """
+        Unsteady Ekman model forward model
+
+        for 1 layer: dU/dt = -j*fc*U + K0*Tau - K1*U
+
+        INPUT:
+        - pk     : list of boundaries of layer(s)
+        - U0    : initial value of complex current
+        OUTPUT:
+        - array of surface current
+
+        Note: 
+            - The use of 'lax.fori_loop' on time loop greatly reduce exectution speed
+            - The use of 'lax.fori_loop' on layer loop has close execution time with not using it, 
+                because there is only a few layers
+        """ 
+        #jax.debug.print('pk = {}',pk)
+
+        # starting from nul current
+        U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        print(U.shape)
+        print(U.dtype)
+        K = self.K_transform(pk) # optimize inverse problem
+        K = K.reshape((self.NdT,self.nl*2))
+        if K.shape[-1]//2!=self.nl:
+           raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
+
+        #gtime = jnp.asarray(self.forcing_time)
+        M = self.pkt2Kt_matrix(gtime=self.model_time)
+        Kt = jnp.dot(M,K)  
+        
+        it=0 # forcing time index
+        arg0 = it, Kt, U
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore') # dont show overflow results
+            _, _, U = lax.fori_loop(0,self.ntm,self.__one_step,arg0)
             
         self.Ur_traj = U
         self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
