@@ -1137,6 +1137,10 @@ if __name__ == "__main__":
         
         # i need to adapt 'jax_cost' to take into account that U is on a hourly time vector now
         
+        # the scan (and sot fori_loop) saves a copy of every array in it. 
+        # So i need to modifiy my first loop to remove the array U from it, only keeping the last update
+        #   and then update U in the main body of the function ...
+        
         # note: using grad instead of jcfw is not the solution
         #       because it wants 63Go of memory (11 Go for the jcfw)
         
