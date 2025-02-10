@@ -486,7 +486,7 @@ class jUnstek1D_Kt_spatial:
         self.dt_forcing = forcing.dt_forcing # 1 hour
         self.dt = int(dt) # dt seconds
         self.ntm = forcing.time[-1]//dt
-        self.ntobs = forcing.time[-1]//dt
+        self.ntf = forcing.time[-1]//dt
         self.forcing_time = forcing.time//observation.obs_period
         self.model_time = jnp.arange(0,self.ntm,1)
         # forcing
@@ -600,67 +600,85 @@ class jUnstek1D_Kt_spatial:
         M = (M.T / S.T).T
         return M
 
-    def __Onelayer(self, arg1):
+    def __Onelayer(self, arg2):
         """
         1 time iteration of unstek model when 1 layer
         """
-        it, K, TA, U = arg1
+        it, K, TA, U = arg2
         ik = 0
-        U = U.at[ik,it+1].set( U[ik, it] + self.dt*( -1j*self.fc*U[ik, it] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik, it]) ) )
+        #U = U.at[ik,it+1].set( U[ik, it] + self.dt*( -1j*self.fc*U[ik, it] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik, it]) ) )
+        U = U.at[ik,:,:].set( U[ik,:,:] + self.dt*( -1j*self.fc*U[ik,:,:] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik,:,:]) ) )
         return it, K, TA, U
         
     def __Nlayer_midlayers_for_scan(self,X0,ik):
         it, K, U = X0
-        U = U.at[ik,it+1].set( U[ik][it] + 
+        # U = U.at[ik,it+1].set( U[ik][it] + 
+        #                         self.dt*( 
+        #                             - 1j*self.fc*U[ik, it] 
+        #                             - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
+        #                             - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+        U = U.at[ik,:,:].set( U[ik,:,:] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik, it] 
-                                    - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
-                                    - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+                                    - 1j*self.fc*U[ik,:,:] 
+                                    - K[it,2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
+                                    - K[it,2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
         X = it, K, U
         return X, X
         
-    def __Nlayer(self,arg1):
+    def __Nlayer(self,arg2):
         """
         1 time iteration of unstek model when N layer
         """        
         
-        it, K, TA,  U = arg1
+        it, K, TA,  U = arg2
         # _, _, U = lax.fori_loop(0,self.nl,self.__do_layer_k,arg1)
         
         # surface
         ik = 0
-        U = U.at[ik, it+1].set( U[ik, it] + 
+        # U = U.at[ik, it+1].set( U[ik, it] + 
+        #                         self.dt*( 
+        #                             - 1j*self.fc*U[ik, it] 
+        #                             + K[it,2*ik]*TA 
+        #                             - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+        U = U.at[ik,:,:].set( U[ik,:,:] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik, it] 
+                                    - 1j*self.fc*U[ik,:,:] 
                                     + K[it,2*ik]*TA 
-                                    - K[it,2*ik+1]*(U[ik, it]-U[ik+1, it]) ) )
+                                    - K[it,2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
         # bottom
         ik = -1
-        U = U.at[ik,it+1].set(  U[ik, it] + 
+        # U = U.at[ik,it+1].set(  U[ik, it] + 
+        #                         self.dt*( 
+        #                             - 1j*self.fc*U[ik, it] 
+        #                             - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
+        #                             - K[it,2*ik+1]*U[ik, it] ) )
+        U = U.at[ik,:,:].set(  U[ik,:,:] + 
                                 self.dt*( 
-                                    - 1j*self.fc*U[ik, it] 
-                                    - K[it,2*ik]*(U[ik, it]-U[ik-1, it]) 
-                                    - K[it,2*ik+1]*U[ik, it] ) )
+                                    - 1j*self.fc*U[ik,:,:] 
+                                    - K[it,2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
+                                    - K[it,2*ik+1]*U[ik,:,:] ) )
         # in between
         X0 = it, K, U
         final, _ = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
         _, _, U = final
         return it, K, TA, U    
     
-    def __one_step(self, itm, arg0):
+    def __one_step(self, X0, inner_t):
         """
-        1 model time step advance
+        1 model time step forward (inner loop)
         
         INPUT:
-        - it: current model time step
-        - arg1: it, K, U at current model time step
+        - itm: current model time step
+        - arg0 it, K, U at current model time step
             it: forcing time index
             K : K vector
             U: velocity 
         OUTPUT:
         - U: updated velocity at next time step 
         """
-        it, K, U = arg0
+        it, K, U = X0
+        itm = it* self.dt_forcing // self.dt + inner_t
+        #jax.debug.print('   itm = {}',itm)
         
         # on-the-fly (linear) interpolation of forcing
         aa = jnp.mod(it,self.dt)/self.dt
@@ -669,15 +687,37 @@ class jUnstek1D_Kt_spatial:
         TA = (1-aa)*self.TA[it,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
         
 
-        arg1 = itm, K, TA, U
+        arg2 = itm, K, TA, U
         # loop on layers
         _, _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
                             self.__Onelayer,    # if 1 layer, ik=0
                             self.__Nlayer,      # else, loop on layers
-                            arg1)           
-        return it, K, U
+                            arg2)   
+        X0 = it, K, U        
+        return X0, X0
+    
+    def __step(self, it, arg0):
+        """
+        outer loop (forcing time step, 1 hour)
+        """
+        K, U = arg0
+        #jax.debug.print('it = {}',it)
+        start = it
+        end = lax.select((it+1)>=self.nt, 
+                         self.nt, 
+                         (it+1))
+        Uold = lax.select( it>0, U[:,it-1,:,:], U[:,0,:,:])
+        arg1 = it, K, Uold
+        
+        X0 = it, K, Uold
+        #_, _, Unext = lax.fori_loop(start, end, self.__one_step,arg1)
+        final, _ = lax.scan(self.__one_step, X0, jnp.arange(0, self.dt_forcing//self.dt))
+        _, _, Unext = final
+        U = U.at[:,it,:,:].set(Unext)
 
-    def do_forward(self, pk, save_all_dt=False):
+        return K, U
+    
+    def do_forward(self, pk):
         """
         Unsteady Ekman model forward model
 
@@ -685,7 +725,6 @@ class jUnstek1D_Kt_spatial:
 
         INPUT:
         - pk     : list of boundaries of layer(s)
-        - save_all_dt: bool, save all timestep or only at observation time
         OUTPUT:
         - array of surface current
 
@@ -693,6 +732,8 @@ class jUnstek1D_Kt_spatial:
             - The use of 'lax.fori_loop' on time loop greatly reduce exectution speed
             - The use of 'lax.fori_loop' on layer loop has close execution time with not using it, 
                 because there is only a few layers
+        
+        TBD : add option to save at every dt
         """ 
         #jax.debug.print('pk = {}',pk)
 
@@ -700,10 +741,8 @@ class jUnstek1D_Kt_spatial:
         #U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
         # ici pas besoin de save tous les pas de temps pour la fonction cout !
         # (pour obtenir une trajectoire si, quand le K est final)
-        if save_all_dt:
-            U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
-        else:
-            U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
+        # save every hour (model OSSE)
+        U = jnp.zeros( (self.nl, self.nt, self.ny, self.nx), dtype='complex')
         
         print(U.shape)
         print(U.dtype)
@@ -714,10 +753,8 @@ class jUnstek1D_Kt_spatial:
         
         # -> voir la fonction step (obs_dt) et one_step (dt) dans MSHH de Florian
         # https://github.com/leguillf/MASSH/blob/main/mapping/src/tools_4Dvar.py
-        
         # autre possibilité : 
         # https://docs.kidger.site/diffrax/
-        raise Exception
         
         K = self.K_transform(pk) # optimize inverse problem
         K = K.reshape((self.NdT,self.nl*2))
@@ -728,11 +765,10 @@ class jUnstek1D_Kt_spatial:
         M = self.pkt2Kt_matrix(gtime=self.model_time)
         Kt = jnp.dot(M,K)  
         
-        it=0 # forcing time index
-        arg0 = it, Kt, U
+        arg0 = Kt, U
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
-            _, _, U = lax.fori_loop(0,self.ntm,self.__one_step,arg0)
+            _, U = lax.fori_loop(0, self.nt, self.__step, arg0)
             # here lets try with 'scan'
             
         self.Ur_traj = U

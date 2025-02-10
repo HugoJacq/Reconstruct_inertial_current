@@ -16,8 +16,8 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # for jax
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
 #print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
-os.environ['XLA_GPU_MEMORY_LIMIT_SLOP_FACTOR'] = '50'
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+#os.environ['XLA_GPU_MEMORY_LIMIT_SLOP_FACTOR'] = '50'
 
 import time as clock
 import scipy.optimize as opt
@@ -1086,7 +1086,7 @@ if __name__ == "__main__":
         Nl = 1
         dT = 3*86400 # s
         dt_forcing = 3600 # s
-        dt = 3600 # model timestep
+        dt = 60 # model timestep
         if Nl==1:
             vector_k = jnp.asarray([-11.31980127, -10.28525189])
         if Nl==2:
@@ -1113,6 +1113,11 @@ if __name__ == "__main__":
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
     
+    
+        # before looking at minimizing, I need to check if the model runs ok.
+        # for this I will compare this model to the 1D version, at the same lon/lat location.
+        # for the same vector_k, results should be the same.
+        raise Exception   
         res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
                         method='L-BFGS-B',
                         jac=var.grad_cost,
