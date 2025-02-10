@@ -126,14 +126,9 @@ class Variational:
         
         A = jnp.zeros( self.Uo.shape, dtype='float64')
         B = jnp.zeros( self.Uo.shape, dtype='float64')
-        #with warnings.catch_warnings(action="ignore"): # dont show overflow results
         A = A.at[:].set(U[::self.obs_period//self.model_dt])
         B = B.at[:].set(V[::self.obs_period//self.model_dt])
         J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
-        # TO DO: 
-        # here use lax.cond 
-        # to detect if nan like 'nojax_grad_cost'
-        #jax.debug.print('inside minimize J = {}', J)
         return J 
  
     def jax_grad_cost(self, pk):        

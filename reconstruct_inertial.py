@@ -1105,6 +1105,7 @@ if __name__ == "__main__":
 
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_kt_1D)
+        print(Ca.shape)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
@@ -1112,11 +1113,33 @@ if __name__ == "__main__":
         _, Ca = model.do_forward_jit(vector_kt_1D)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
-    
-    
+
+        t3 = clock.time()
+        J = var.cost(vector_kt_1D)
+        print('time, cost (with compile)',clock.time()-t3)
+
+        t4 = clock.time()
+        J = var.cost(vector_kt_1D)
+        print('time, cost (no compile)',clock.time()-t4)
+
+        t5 = clock.time()
+        J = var.grad_cost(vector_kt_1D)
+        print('time, gradcost (with compile)',clock.time()-t5)
+
+        t6 = clock.time()
+        J = var.grad_cost(vector_kt_1D)
+        print('time, gradcost (no compile)',clock.time()-t6)
+        
+        
         # before looking at minimizing, I need to check if the model runs ok.
         # for this I will compare this model to the 1D version, at the same lon/lat location.
         # for the same vector_k, results should be the same.
+        
+        # i need to adapt 'jax_cost' to take into account that U is on a hourly time vector now
+        
+        # note: using grad instead of jcfw is not the solution
+        #       because it wants 63Go of memory (11 Go for the jcfw)
+        
         raise Exception   
         res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
                         method='L-BFGS-B',
