@@ -1084,7 +1084,7 @@ if __name__ == "__main__":
         # LAT_bounds = [30.,31.]
         N_CPU = 1
         Nl = 1
-        dT = 3*86400 # s
+        dT = 28*86400 # s
         dt_forcing = 3600 # s
         dt = 60 # model timestep
         if Nl==1:
@@ -1099,38 +1099,55 @@ if __name__ == "__main__":
         observations2D = Observation1D(period_obs, dt, file)
         model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, observation=observations2D, dT=dT)
         var = Variational(model, observations2D)
-        
-        vector_kt = model.kt_ini(vector_k)
-        vector_kt_1D = model.kt_2D_to_1D(vector_kt) # scipy.minimize only accept 1D array
 
         t1 = clock.time()
-        _, Ca = model.do_forward_jit(vector_kt_1D)
+        _, Ca = model.do_forward_jit(vector_k)
         print(Ca.shape)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
-        _, Ca = model.do_forward_jit(vector_kt_1D)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
-        print('time, forward model (no compile)',clock.time()-t2)
-
-        t3 = clock.time()
-        J = var.cost(vector_kt_1D)
-        print('time, cost (with compile)',clock.time()-t3)
-
-        t4 = clock.time()
-        J = var.cost(vector_kt_1D)
-        print('time, cost (no compile)',clock.time()-t4)
-
-        t5 = clock.time()
-        J = var.grad_cost(vector_kt_1D)
-        print('time, gradcost (with compile)',clock.time()-t5)
-
-        t6 = clock.time()
-        J = var.grad_cost(vector_kt_1D)
-        print('time, gradcost (no compile)',clock.time()-t6)
+        # _, Ca = model.do_forward_jit(vector_k)
+        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        # print('time, forward model (no compile)',clock.time()-t2)
         
+        # t3 = clock.time()
+        # J = var.cost(vector_k)
+        # print('time, cost (with compile)',clock.time()-t3)
+
+        # t4 = clock.time()
+        # J = var.cost(vector_k)
+        # print('time, cost (no compile)',clock.time()-t4)
+
+        # t5 = clock.time()
+        # dJ = var.grad_cost(vector_k)
+        # print('time, gradcost (with compile)',clock.time()-t5)
+
+        # t6 = clock.time()
+        # dJ = var.grad_cost(vector_k)
+        # print('time, gradcost (no compile)',clock.time()-t6)
         
+        Nl = len(vector_k)//2
+        forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
+        model2 = jUnstek1D_Kt(Nl, forcing=forcing1D, dT=dT)
+        var2 = Variational(model, observations)
+        
+        vector_kt = model.kt_ini(vector_k)
+        vector_kt_1D = model.kt_2D_to_1D(vector_kt)
+        _, Ca = model2.do_forward_jit(vector_kt_1D)
+        Ua2 = np.real(Ca)[0]
+        
+        # for the 2D version, lets find indexes
+        indx,indy = find_indices(point_loc,forcing2D.data.lon.values,forcing2D.data.lat.values,tree=None)[0]
+        
+        fig, ax = plt.subplots(1,1,figsize = (10,5),constrained_layout=True,dpi=dpi)
+        ax.plot(model2.model_time, Ua2, c='b')
+        ax.plot(model.forcing_time, Ua[:,indy,indx], c='r',ls='--')
+        ax.plot(forcing.time,U,c='k')
+        ax.set_xlabel('time')
+        ax.set_ylabel('U ageo')
+        plt.show()
+        raise Exception
         # before looking at minimizing, I need to check if the model runs ok.
         # for this I will compare this model to the 1D version, at the same lon/lat location.
         # for the same vector_k, results should be the same.
@@ -1143,6 +1160,9 @@ if __name__ == "__main__":
         
         # note: using grad instead of jcfw is not the solution
         #       because it wants 63Go of memory (11 Go for the jcfw)
+        
+        # quand je run le boucle interne, mettre un K qui a juste une dimension pour le nb de layer.
+        # la je save le vecteur K sur tous les dt du model mais ca sert à rien
         
         raise Exception   
         res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),

@@ -120,7 +120,7 @@ class Variational:
         Note: this function works with numpy arrays
         """
         
-        _, C = self.model.do_forward(pk) # _, C = self.model.do_forward_jit(pk)
+        _, C = self.model.do_forward_jit(pk) # _, C = self.model.do_forward_jit(pk)
         U, V = jnp.real(C)[0], jnp.imag(C)[0]
         
         
