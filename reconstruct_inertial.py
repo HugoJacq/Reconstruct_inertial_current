@@ -1142,8 +1142,12 @@ if __name__ == "__main__":
         
         fig, ax = plt.subplots(1,1,figsize = (10,5),constrained_layout=True,dpi=dpi)
         ax.plot(model2.model_time, Ua2, c='b')
-        ax.plot(model.forcing_time, Ua[:,indy,indx], c='r',ls='--')
+        ax.plot(model.forcing_time[1:], Ua[:-1,indy,indx], c='r',ls='--')
         ax.plot(forcing.time,U,c='k')
+        
+        print('len(model2.model_time), len(model.forcing_time), len(forcing.time)')
+        print( len(model2.model_time), len(model.forcing_time), len(forcing.time))
+        
         ax.set_xlabel('time')
         ax.set_ylabel('U ageo')
         plt.show()

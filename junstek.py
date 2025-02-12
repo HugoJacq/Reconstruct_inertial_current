@@ -683,17 +683,19 @@ class jUnstek1D_Kt_spatial:
         - U: updated velocity at next time step 
         """
         it, Kt, U = X0
+        nsubsteps = self.dt_forcing // self.dt
         #jax.debug.print('   inner_t = {}',inner_t)
-        itm = it*self.dt_forcing // self.dt + inner_t
+        itm = it*nsubsteps + inner_t
         #jax.debug.print('   itm = {}',itm)
         
         # on-the-fly (linear) interpolation of forcing
-        aa = jnp.mod(it,self.dt)/self.dt
-        it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
+        aa = jnp.mod(itm,nsubsteps)/nsubsteps
+        #jax.debug.print('it = {}, itm = {}, aa = {}',it,itm,aa)
+        #print('it,itm,aa = {}, {}, {}',it,itm,aa)
+        #it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
         itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
         TA = (1-aa)*self.TA[it,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
         
-
         arg2 = itm, Kt, TA, U
         # loop on layers
         _, _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
@@ -793,7 +795,8 @@ class jUnstek1D_Kt_spatial:
             
             # lax.scan version
             X0 = Kt, U
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt))
+            #final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,3 )) #self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
             _, U = final
             
         self.Ur_traj = U
