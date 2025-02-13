@@ -333,3 +333,97 @@ def open_croco_sfx_file(file_list, lazy=True, chunks=None):
 			coords=coords,
 			boundary='extend')
 	return ds, grid
+
+def open_croco_sfx_file_at_point_loc(file_list, point_loc, lazy=True, chunks=None):
+	"""
+	This function opens an output of Croco simulations, renames some variables and then return the dataset and its xgcm grid
+	"""
+	
+	if chunks==None:
+		size_chunk=-1
+	else:
+		size_chunk=chunks
+	
+ 
+	# opening files
+	with warnings.catch_warnings():
+		warnings.simplefilter('ignore')
+		# warning are about chunksize, because not all chunk have the same size.
+		if lazy==True:
+			ds = xr.open_mfdataset(file_list,chunks=size_chunk)
+		else:
+			ds = xr.open_mfdataset(file_list)
+			# ,chunks={'time_counter': -1,
+			#     'x_rho': size_chunk,
+			#     'y_rho': size_chunk,
+			#     'y_u': size_chunk, 
+			#     'x_u': size_chunk,
+			#     'y_v': size_chunk, 
+			#     'x_v': size_chunk,})
+
+	# removing used variables
+	ds = ds.drop_vars(['bvstr','bustr','ubar','vbar','hbbl','h',
+	'time_instant','time_instant_bounds','time_counter_bounds'])
+
+	# rename redundant dimensions
+	_dims = (d for d in ['x_v', 'y_u', 'x_w', 'y_w'] if d in ds.dims)
+	for d in _dims:
+		ds = ds.rename({d: d[0]+'_rho'})
+
+	# renaming variables
+	ds = ds.rename({'zeta':'SSH',
+			'sustr':'oceTAUX',
+			'svstr':'oceTAUY',
+			'shflx':'Heat_flx_net',
+			'swflx':'frsh_water_net',
+			'swrad':'SW_rad',
+			'hbl':'MLD',
+			'u':'U',
+			'v':'V',
+			'time_counter':'time'})
+	if 'nav_lat_rho' in ds.variables:
+		ds = ds.rename({'nav_lat_rho':'lat_rho',
+			'nav_lon_rho':'lon_rho',
+			'nav_lat_u':'lat_u',
+			'nav_lat_v':'lat_v',
+			'nav_lon_u':'lon_u',
+			'nav_lon_v':'lon_v'})
+
+	# reduce dataset size around point_loc
+	edge = 0.1 # °
+	LON_bounds = [point_loc[0]-edge,point_loc[0]+edge]
+	LAT_bounds = [point_loc[1]-edge,point_loc[1]+edge]
+	indices = find_indices_gridded_latlon(ds.lon_rho.values, LON_bounds, ds.lat_rho.values, LAT_bounds)
+	indxmin, indxmax, indymin, indymax = indices
+	# smaller domain
+	ds = ds.isel(x_rho=slice(indxmin,indxmax),
+				y_rho=slice(indymin,indymax),
+				x_u=slice(indxmin,indxmax),
+				y_v=slice(indymin,indymax) )
+ 
+	# building a new xgcm grid on the reduced dataset
+	coords={'x':{'center':'x_rho',  'right':'x_u'}, 
+			'y':{'center':'y_rho', 'right':'y_v'}}    
+	grid = xGrid(ds, 
+		coords=coords,
+		boundary='extend')
+
+	# interp at mass point
+	for var in ['U','oceTAUX']:
+		attrs = ds[var].attrs
+		ds[var] = grid.interp(ds[var], 'x')
+		ds[var].attrs = attrs
+	for var in ['V','oceTAUY']:
+		attrs = ds[var].attrs
+		ds[var] = grid.interp(ds[var], 'y')
+		ds[var].attrs = attrs
+	# remove non-rho coordinates
+	ds = ds.drop_vars({'lat_u','lat_v','lon_u','lon_v'})
+	# all onvariables are now on rho points:  
+	ds = ds.rename({'lon_rho':'lon','lat_rho':'lat'})
+
+	# reducing dataset at the 'point_loc'
+	indx,indy = find_indices(point_loc,ds.lon.values,ds.lat.values)[0]
+	ds = ds.isel(x_rho=indx,y_rho=indy)
+ 
+	return ds
