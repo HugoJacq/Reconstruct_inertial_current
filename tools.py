@@ -5,6 +5,9 @@ from math import factorial
 import scipy as sp
 import numpy as np
 from scipy.fftpack import fft
+import warnings
+import xarray as xr
+from xgcm import Grid as xGrid
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.
@@ -266,3 +269,67 @@ def print_memory_chunk(ds,namevar):
     nelements = np.prod(ds[namevar].data.chunksize)
     chunk_memory = nelements * ds[namevar].data.itemsize
     print("Memory used by each chunk of the DataArray "+namevar+f" {chunk_memory / 1024**2:.2f} MB")
+    
+    
+def open_croco_sfx_file(file_list, lazy=True, chunks=None):
+	"""
+	This function opens an output of Croco simulations, renames some variables and then return the dataset and its xgcm grid
+	"""
+	
+	if chunks==None:
+		size_chunk=-1
+	else:
+		size_chunk=chunks
+	
+ 
+	# opening files
+	with warnings.catch_warnings():
+		warnings.simplefilter('ignore')
+		# warning are about chunksize, because not all chunk have the same size.
+		if lazy==True:
+			ds = xr.open_mfdataset(file_list,chunks=size_chunk)
+		else:
+			ds = xr.open_mfdataset(file_list)
+			# ,chunks={'time_counter': -1,
+			#     'x_rho': size_chunk,
+			#     'y_rho': size_chunk,
+			#     'y_u': size_chunk, 
+			#     'x_u': size_chunk,
+			#     'y_v': size_chunk, 
+			#     'x_v': size_chunk,})
+
+	# removing used variables
+	ds = ds.drop_vars(['bvstr','bustr','ubar','vbar','hbbl','h',
+	'time_instant','time_instant_bounds','time_counter_bounds'])
+
+	# rename redundant dimensions
+	_dims = (d for d in ['x_v', 'y_u', 'x_w', 'y_w'] if d in ds.dims)
+	for d in _dims:
+		ds = ds.rename({d: d[0]+'_rho'})
+
+	# renaming variables
+	ds = ds.rename({'zeta':'SSH',
+			'sustr':'oceTAUX',
+			'svstr':'oceTAUY',
+			'shflx':'Heat_flx_net',
+			'swflx':'frsh_water_net',
+			'swrad':'SW_rad',
+			'hbl':'MLD',
+			'u':'U',
+			'v':'V',
+			'time_counter':'time'})
+	if 'nav_lat_rho' in ds.variables:
+		ds = ds.rename({'nav_lat_rho':'lat_rho',
+			'nav_lon_rho':'lon_rho',
+			'nav_lat_u':'lat_u',
+			'nav_lat_v':'lat_v',
+			'nav_lon_u':'lon_u',
+			'nav_lon_v':'lon_v'})
+
+	# building xgcm grid
+	coords={'x':{'center':'x_rho',  'right':'x_u'}, 
+		'y':{'center':'y_rho', 'right':'y_v'}}    
+	grid = xGrid(ds, 
+			coords=coords,
+			boundary='extend')
+	return ds, grid

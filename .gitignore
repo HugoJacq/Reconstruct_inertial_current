@@ -214,3 +214,6 @@ Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.zarr/Vg/.zarray
 Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.zarr/Vg/.zattrs
 Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc
 Croco_Interp_1D_LON-50.0_LAT35.0.nc1MONTH
+gotm_workdir/Croco_LON-50.0_LAT35.0/forcing.txtSAVE
+gotm_workdir/Croco_LON-50.0_LAT35.0/output_file.nc
+gotm_workdir/Croco_LON-50.0_LAT35.0/restart.nc
