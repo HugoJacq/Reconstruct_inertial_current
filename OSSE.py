@@ -117,6 +117,88 @@ class Model_source_OSSE:
                 self.nameOceTaux,self.nameOceTauy)
         
    
+class Model_source_3D:
+    """
+    This class adapts 3D model outputs to be used with the python scripts
+    """
+    
+    def __init__(self, SOURCE, liste_all_files):
+        self.source = SOURCE 
+        if SOURCE=='Croco':
+            size_chunk = 200
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                # warning are about chunksize, because not all chunk have the same size.
+                self.dataset = xr.open_mfdataset(
+                                    liste_all_files, 
+                                    chunks={'time_counter': -1,
+                                            'x_rho': size_chunk,
+                                            'y_rho': size_chunk,
+                                            'y_u': size_chunk, 
+                                            'x_u': size_chunk,
+                                            'y_v': size_chunk, 
+                                            'x_v': size_chunk,})
+            print(self.dataset)
+            # WIP to plot Croco profiles ...
+            raise Exception
+        
+            self.nameLon_u = 'lon_u'
+            self.nameLon_v = 'lon_v'
+            self.nameLon_rho = 'lon_rho'
+            self.nameLat_u = 'lat_u'
+            self.nameLat_v = 'lat_v'
+            self.nameLat_rho = 'lat_rho'
+            self.nameSSH = 'SSH'
+            self.nameU = 'U'
+            self.nameV = 'V'
+            self.nameTime = 'time'
+            self.nameOceTaux = 'oceTAUX'
+            self.nameOceTauy = 'oceTAUY'
+            self.gridtype = 'C'
+            # rename redundant dimensions
+            _dims = (d for d in ['x_v', 'y_u', 'x_w', 'y_w'] if d in self.dataset.dims)
+            for d in _dims:
+                self.dataset = self.dataset.rename({d: d[0]+'_rho'})
+            
+            # removing used variables
+            self.dataset = self.dataset.drop_vars(['bvstr','bustr','ubar','vbar','hbbl','h',
+                                                   'time_instant','time_instant_bounds','time_counter_bounds'])
+            
+            
+            # renaming
+            self.dataset = self.dataset.rename({'zeta':'SSH',
+                                                'sustr':'oceTAUX',
+                                                'svstr':'oceTAUY',
+                                                'shflx':'Heat_flx_net',
+                                                'swflx':'frsh_water_net',
+                                                'swrad':'SW_rad',
+                                                'hbl':'MLD',
+                                                'u':'U',
+                                                'v':'V',
+                                                'time_counter':'time'})
+            #   here we remove some variable
+            #   because else it cannot write the whole file
+            #   but they can be accessed with the original file.
+            #   and we dont need them at every dt, and also no need to have the smoothed version.
+            #self.dataset = self.dataset.drop_vars(['MLD','temp','salt','frsh_water_net','Heat_flx_net','SW_rad'])
+            
+            if 'nav_lat_rho' in self.dataset.variables:
+                self.dataset = self.dataset.rename({
+                                                'nav_lat_rho':'lat_rho',
+                                                'nav_lon_rho':'lon_rho',
+                                                'nav_lat_u':'lat_u',
+                                                'nav_lat_v':'lat_v',
+                                                'nav_lon_u':'lon_u',
+                                                'nav_lon_v':'lon_v'})
+            # building xgcm grid
+            coords={'x':{'center':'x_rho',  'right':'x_u'}, 
+                    'y':{'center':'y_rho', 'right':'y_v'}}    
+            self.grid = xGrid(self.dataset, 
+                coords=coords,
+                boundary='extend')
+            
+   
+   
 def interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save, method='linear'):
     """
     Source model is : MITgcm or Crocco

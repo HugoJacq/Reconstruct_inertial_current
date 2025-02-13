@@ -97,11 +97,12 @@ ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
+PLOT_CROCO_PROFILES     = True      # plot the vertical profiles from croco, at point_loc
 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
 TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
-TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
+TEST_JUNSTEK1D_KT_SPATIAL = False   # implementing jUnstek1D_spatial
 BENCHMARK_ALL           = False     # performance benchmark
 
     
@@ -957,6 +958,24 @@ if __name__ == "__main__":
             
         # Getting the values from file        
            
+     
+    # Looking at profiles in Croco          
+    if PLOT_CROCO_PROFILES:
+        """
+        """              
+        print('* Plotting Croco 3D profile')
+        raise Exception('This is WIP, opening file is long i need to fix that')
+        
+        # open model
+        model_croco = Model_source_3D('Croco',files_dict['Croco']['3D'])
+        ds = model_croco.dataset
+        
+        # reduce to 'point_loc'
+        indx, indy = find_indices(point_loc, ds.lon_rho, ds.lat_rho)[0]
+        #ds = 
+        
+        print(ds)        
+              
                       
     # TESTS
     if TEST_ROTARY_SPECTRA:
@@ -1076,6 +1095,12 @@ if __name__ == "__main__":
         
     if TEST_JUNSTEK1D_KT_SPATIAL:
         """
+        Note:
+        Hugo 13/02/2025: Forward model is ok, if dT = 28 days, it gives the same results as JUNSTEK1D_KT.
+                        But, performance when computing the gradient needs to be tweaked.
+                        Memory usage is too high, do I need to code better in JAX ? 
+                        I need to look more into JAX checkpoint.
+                        Maybe ask Florian how he does it with MSSH ?
         """
         # 5°x5°,dt=1h -> 3Go
         # 5°x5°,dt=1min -> 3*60=180Go
