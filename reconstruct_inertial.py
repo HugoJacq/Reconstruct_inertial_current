@@ -31,8 +31,8 @@ import glob
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 from matplotlib import ticker as mticker
-import jax.numpy as jnp
-import jax
+#import jax.numpy as jnp
+#import jax
 jax.config.update("jax_enable_x64", True)
 # jax.config.update('jax_platform_name', 'cpu')
 
