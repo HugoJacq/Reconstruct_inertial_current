@@ -14,9 +14,9 @@ path_save = path_in
 
 path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
-path_save = './'
+path_save = './data_regrid/'
 
-DASHBOARD = True
+DASHBOARD = False
 new_dx = 0.1 # °
 start = clock.time()
 if __name__ == "__main__":  
@@ -39,40 +39,45 @@ if __name__ == "__main__":
     L_v = ['V','oceTAUY']
     for var in L_u:
         attrs = ds[var].attrs
-        ds[var] = xgrid.interp(ds[var].load(), 'x')#.compute()
+        ds[var] = xgrid.interp(ds[var].load(), 'x')
         ds[var].attrs = attrs
     for var in L_v:
         attrs = ds[var].attrs
-        ds[var] = xgrid.interp(ds[var].load(), 'y')#.compute()
+        ds[var] = xgrid.interp(ds[var].load(), 'y')
         ds[var].attrs = attrs
     
     # we have variables only at rho points now
     ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
     ds = ds.set_coords(['lon','lat'])
 
-    print(ds.U)
-    print(ds.temp)
-
     # mask area where lat and lon == 0.
     lon2D = ds.lon
     lat2D = ds.lat
+    lonmin = np.round( np.nanmin(np.where(lon2D.values<0.,lon2D.values,np.nan)), 1)
+    lonmax = np.round( np.nanmax(np.where(lon2D.values<0.,lon2D.values,np.nan)), 1)
+    latmin = np.round( np.nanmin(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
+    latmax = np.round( np.nanmax(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
+    print('     min lon =', lonmin)
+    print('     max lon =', lonmax)
+    print('     min lat =', latmin)
+    print('     max lat =', latmax)
     ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
     ds['lat'] = xr.where(ds.lon==0.,np.nan,ds.lat)
-
+    ds['mask'] = xr.where(lon2D==0.,0.,1.)
     # new dataset
-    ds_out = xe.util.grid_2d(-80, -30, new_dx, 20, 50, new_dx)
+    ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
     # regridder
     regridder = xe.Regridder(ds, ds_out, "bilinear")
     
     # regriding variable
     print('* Regridding ...')
-    print(str(list(ds.variables)))
+    ds_out['mask'] = regridder(ds['mask'])
     for namevar in list(ds.variables):
-        if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time']:
+        if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask']:
             print('     '+namevar)
             ds_out[namevar] = regridder(ds[namevar])
-    
-    
+            # masking
+            ds_out[namevar] = ds_out[namevar].where(ds_out['mask'])
     
     # replacing x and y with lon1D and lat1D
     ds_out['lon1D'] = ds_out.lon[0,:]
@@ -83,16 +88,11 @@ if __name__ == "__main__":
     ds_out = ds_out.reset_coords(names=['lon','lat'], drop=True)
     ds_out = ds_out.rename({'lon1D':'lon','lat1D':'lat'})
 
-    # masking
-    print('MASKING OF NEW DATASET IS TO BE DONE')
-
     # print some stats
     print('OLD DATASET')
-    print(' shape =',ds.sizes)
-    print(' size (Go) =',ds.nbytes/1e9)
+    print(ds)
     print('NEW DATASET')
-    print(' shape =',ds_out.sizes)
-    print(' size (Go) =',ds_out.nbytes/1e9)
+    print(ds_out)
 
 
     # VERIFICATION
