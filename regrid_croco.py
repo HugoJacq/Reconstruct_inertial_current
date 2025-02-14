@@ -8,9 +8,11 @@ import time as clock
 
 from tools import *
 
-filename = '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'
-DASHBOARD = False
-new_dx = 1 # °
+path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
+filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
+
+DASHBOARD = True
+new_dx = 0.1 # °
 start = clock.time()
 if __name__ == "__main__":  
 
@@ -24,51 +26,96 @@ if __name__ == "__main__":
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
 
-    #ds = xr.open_dataset(filename)
-    ds, _ = open_croco_sfx_file(filename, lazy=True, chunks={'time':100})
+    print('* Opening file')
+    ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
+
+    print('* Interpolation at mass point...')
+    L_u = ['U','oceTAUX']
+    L_v = ['V','oceTAUY']
+    for var in L_u:
+        attrs = ds[var].attrs
+        ds[var] = xgrid.interp(ds[var].load(), 'x')#.compute()
+        ds[var].attrs = attrs
+    for var in L_v:
+        attrs = ds[var].attrs
+        ds[var] = xgrid.interp(ds[var].load(), 'y')#.compute()
+        ds[var].attrs = attrs
+    
+    # we have variables only at rho points now
     ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
     ds = ds.set_coords(['lon','lat'])
 
-    temp = ds.temp
+    print(ds.U)
+    print(ds.temp)
 
-    # before
-    plt.figure(figsize=(9, 5))
-    ax = plt.axes(projection=ccrs.PlateCarree())
-    temp[0].plot.pcolormesh(ax=ax, x='lon', y='lat')
-    ax.coastlines()
-    ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
-
+    # mask area where lat and lon == 0.
+    lon2D = ds.lon
+    lat2D = ds.lat
     ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
     ds['lat'] = xr.where(ds.lon==0.,np.nan,ds.lat)
 
-    print(ds)
-
+    # new dataset
     ds_out = xe.util.grid_2d(-80, -30, new_dx, 20, 50, new_dx)
+    # regridder
     regridder = xe.Regridder(ds, ds_out, "bilinear")
-    temp_out = regridder(temp)
-    ds_out['temp'] = temp_out
-    print(ds_out['lat'].values)
+    
+    # regriding variable
+    print('* Regridding ...')
+    print(str(list(ds.variables)))
+    for namevar in list(ds.variables):
+        if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time']:
+            print('     '+namevar)
+            ds_out[namevar] = regridder(ds[namevar])
+    
+    
+    
+    # replacing x and y with lon1D and lat1D
     ds_out['lon1D'] = ds_out.lon[0,:]
     ds_out['lat1D'] = ds_out.lat[:,0]
-    print(ds_out['lon1D'].values)
-    print(ds_out['lat1D'].values)
     ds_out = ds_out.swap_dims({'x':'lon1D','y':'lat1D'})
+    # removing unsed dims and coordinates
+    ds_out = ds_out.drop_dims(['x_b','y_b'])
+    ds_out = ds_out.reset_coords(names=['lon','lat'], drop=True)
+    ds_out = ds_out.rename({'lon1D':'lon','lat1D':'lat'})
     print(ds_out)
 
+    # VERIFICATION
+    # -> GLOBAL
+    # before
     plt.figure(figsize=(9, 5))
     ax = plt.axes(projection=ccrs.PlateCarree())
-    ds_out.temp[0].plot.pcolormesh(ax=ax, x='lon1D', y='lat1D')
+    ax.pcolormesh(lon2D,lat2D,ds['temp'][0])
+    # temp[0].plot.pcolormesh(ax=ax, x='lon', y='lat')
+    ax.coastlines()
+    ax.set_title('old')
+    ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
+    # after
+    plt.figure(figsize=(9, 5))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out['temp'][0])
     ax.coastlines()
     ax.set_title('new')
     ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
-    print(temp)
-    print(temp_out)
+    for namevar in ['SSH','MLD','U','V','temp','salt','oceTAUX','oceTAUY','Heat_flx_net','frsh_water_net','SW_rad']:
+        print(namevar)
+        print(ds_out[namevar])
+        plt.figure(figsize=(9, 5))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out[namevar][0])
+        ax.coastlines()
+        ax.set_title('new')
+        ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
+
+    # ds_out.compute()
+    # ds_out.to_netcdf(path=path_in+filename+'_'+str(new_dx)+'deg.nc',mode='w')
+    # ds.close()
+    # ds_out.close()
     
-    # plt.scatter(ds['lon'][::2], ds['lat'][::2], s=0.01)  # plot grid locations
-    # plt.ylim([-90, 90])
-    # plt.xlabel("lon")
-    # plt.ylabel("lat")
+    # save regridder
+    regridder.to_netcdf(path_in+'regridder_'+str(new_dx)+'deg.nc')
+    
+    
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')
     plt.show()
