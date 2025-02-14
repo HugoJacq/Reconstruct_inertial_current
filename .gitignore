@@ -228,3 +228,5 @@ wgts.nc
 __pycache__/tools.cpython-313.pyc
 PET0.ESMF_LogFile
 bilinear_15x18_20x24.nc
+croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg.nc
+regridder_0.1deg.nc
