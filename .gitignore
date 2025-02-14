@@ -221,3 +221,6 @@ gotm_workdir/Croco_LON-53.0_LAT29.5/forcing.txt
 gotm_workdir/Croco_LON-53.0_LAT29.5/output_file.nc
 gotm_workdir/Croco_LON-53.0_LAT29.5/restart.nc
 png_gotm/Croco_LON-50.0_LAT35.0/gotm_vs_Croco_Usfx.png
+png_gotm/Croco_LON-53.0_LAT29.5/gotm_vs_Croco_Usfx.png
+gotm_workdir/Croco_LON-53.0_LAT29.5/initial.txt
+png_gotm/Croco_LON-53.0_LAT29.5/gotm_vs_Croco_Usfx_save.png

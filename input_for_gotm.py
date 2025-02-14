@@ -23,7 +23,7 @@ fileC = '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-20
 # Output name
 dir_forcing = './gotm_workdir/'
 name_output = 'forcing'
-
+name_ini_state = 'initial'
 # =========================================
 start = clock.time()
 print('* Building forcing file for GOTM simulation')
@@ -39,7 +39,7 @@ if pathlib.Path(dir_forcing+case+name_output+'.txt').is_file():
     sys.exit(0) # exit script
 
 # opening files
-ds = open_croco_sfx_file_at_point_loc(fileC, point_loc)
+ds = open_croco_sfx_file_at_point_loc(fileC, point_loc, interp_var='flux')
 
 time = ds.time.values.astype("datetime64[s]")  # convert to 's' to get right format for GOTM
 print('     loading dataset ...')
@@ -62,5 +62,13 @@ with open(dir_forcing+case+name_output+".txt", "w") as f:
                             str(ds.Heat_flx_net.values[it])+'    '+
                                 str(ds.frsh_water_net.values[it])+'    '+
                                     str(ds.SW_rad.values[it])+'\n')
+
+
+# initial state
+# temp, salt
+with open(dir_forcing+case+name_ini_state+".txt", "w") as f:
+    f.write(str(ds.temp.isel(time=0).values)+'     '+
+                str(ds.salt.isel(time=0).values)+'     ')
+        
 print('     done !')
 print('Total execution time = '+str(np.round(clock.time()-start,2))+' s')

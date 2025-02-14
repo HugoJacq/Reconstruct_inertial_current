@@ -334,7 +334,7 @@ def open_croco_sfx_file(file_list, lazy=True, chunks=None):
 			boundary='extend')
 	return ds, grid
 
-def open_croco_sfx_file_at_point_loc(file_list, point_loc, lazy=True, chunks=None):
+def open_croco_sfx_file_at_point_loc(file_list, point_loc, interp_var='currents', lazy=True, chunks=None):
 	"""
 	This function opens an output of Croco simulations, renames some variables and then return the dataset and its xgcm grid
 	"""
@@ -350,16 +350,17 @@ def open_croco_sfx_file_at_point_loc(file_list, point_loc, lazy=True, chunks=Non
 		warnings.simplefilter('ignore')
 		# warning are about chunksize, because not all chunk have the same size.
 		if lazy==True:
-			ds = xr.open_mfdataset(file_list,chunks=size_chunk)
+			#ds = xr.open_mfdataset(file_list,chunks=size_chunk)
+			ds =  xr.open_mfdataset(file_list ,chunks={'time_counter': 1,
+													'x_rho': size_chunk,
+													'y_rho': size_chunk,
+													'y_u': size_chunk, 
+													'x_u': size_chunk,
+													'y_v': size_chunk, 
+													'x_v': size_chunk,},parallel=True)
 		else:
 			ds = xr.open_mfdataset(file_list)
-			# ,chunks={'time_counter': -1,
-			#     'x_rho': size_chunk,
-			#     'y_rho': size_chunk,
-			#     'y_u': size_chunk, 
-			#     'x_u': size_chunk,
-			#     'y_v': size_chunk, 
-			#     'x_v': size_chunk,})
+			
 
 	# removing used variables
 	ds = ds.drop_vars(['bvstr','bustr','ubar','vbar','hbbl','h',
@@ -390,17 +391,26 @@ def open_croco_sfx_file_at_point_loc(file_list, point_loc, lazy=True, chunks=Non
 			'nav_lon_v':'lon_v'})
 
 	# reduce dataset size around point_loc
-	edge = 0.1 # °
-	LON_bounds = [point_loc[0]-edge,point_loc[0]+edge]
-	LAT_bounds = [point_loc[1]-edge,point_loc[1]+edge]
-	indices = find_indices_gridded_latlon(ds.lon_rho.values, LON_bounds, ds.lat_rho.values, LAT_bounds)
-	indxmin, indxmax, indymin, indymax = indices
+	# edge = 0.1 # °
+	# LON_bounds = [point_loc[0]-edge,point_loc[0]+edge]
+	# LAT_bounds = [point_loc[1]-edge,point_loc[1]+edge]
+	# indices = find_indices_gridded_latlon(ds.lon_rho.values, LON_bounds, ds.lat_rho.values, LAT_bounds)
+	# indxmin, indxmax, indymin, indymax = indices
+	edge = 2 # number of points
+	indx,indy = find_indices(point_loc,ds.lon_rho.values, ds.lat_rho.values)[0]
+	indxmin, indxmax,= indx-edge,indx+edge 
+	indymin, indymax = indy-edge,indy+edge 
+ 
 	# smaller domain
 	ds = ds.isel(x_rho=slice(indxmin,indxmax),
 				y_rho=slice(indymin,indymax),
 				x_u=slice(indxmin,indxmax),
 				y_v=slice(indymin,indymax) )
- 
+	# load variables that we need to interp
+	ds.U.load()
+	ds.V.load()
+	ds.oceTAUX.load()
+	ds.oceTAUY.load()
 	# building a new xgcm grid on the reduced dataset
 	coords={'x':{'center':'x_rho',  'right':'x_u'}, 
 			'y':{'center':'y_rho', 'right':'y_v'}}    
@@ -408,12 +418,27 @@ def open_croco_sfx_file_at_point_loc(file_list, point_loc, lazy=True, chunks=Non
 		coords=coords,
 		boundary='extend')
 
+
 	# interp at mass point
-	for var in ['U','oceTAUX']:
+	if interp_var=='flux':
+		L_u = ['oceTAUX']
+		L_v = ['oceTAUY']
+	elif interp_var=='currents':
+		L_u = ['U','oceTAUX']
+		L_v = ['V','oceTAUY']
+	elif interp_var=='all':
+		L_u = ['U','oceTAUX']
+		L_v = ['V','oceTAUY']
+	else:
+		print("open_croco_sfx_file_at_point_loc: I dont know what variable you want to interp, i'll do all")
+		L_u = ['U','oceTAUX']
+		L_v = ['V','oceTAUY']
+  
+	for var in L_u:
 		attrs = ds[var].attrs
 		ds[var] = grid.interp(ds[var], 'x')
 		ds[var].attrs = attrs
-	for var in ['V','oceTAUY']:
+	for var in L_v:
 		attrs = ds[var].attrs
 		ds[var] = grid.interp(ds[var], 'y')
 		ds[var].attrs = attrs
