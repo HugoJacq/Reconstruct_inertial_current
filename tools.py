@@ -327,8 +327,8 @@ def open_croco_sfx_file(file_list, lazy=True, chunks=None):
 			'nav_lon_v':'lon_v'})
 
 	# building xgcm grid
-	coords={'x':{'center':'x_rho',  'right':'x_u'}, 
-		'y':{'center':'y_rho', 'right':'y_v'}}    
+	coords={'x':{'center':'x_rho',  'inner':'x_u'}, 
+		'y':{'center':'y_rho', 'inner':'y_v'}}    
 	grid = xGrid(ds, 
 			coords=coords,
 			boundary='extend')

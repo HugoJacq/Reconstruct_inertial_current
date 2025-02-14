@@ -10,8 +10,13 @@ from tools import *
 
 path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
+path_save = path_in
 
-DASHBOARD = True
+path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
+filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
+path_save = './data_regrid/'
+
+DASHBOARD = False
 new_dx = 0.1 # °
 start = clock.time()
 if __name__ == "__main__":  
@@ -34,40 +39,45 @@ if __name__ == "__main__":
     L_v = ['V','oceTAUY']
     for var in L_u:
         attrs = ds[var].attrs
-        ds[var] = xgrid.interp(ds[var].load(), 'x')#.compute()
+        ds[var] = xgrid.interp(ds[var].load(), 'x')
         ds[var].attrs = attrs
     for var in L_v:
         attrs = ds[var].attrs
-        ds[var] = xgrid.interp(ds[var].load(), 'y')#.compute()
+        ds[var] = xgrid.interp(ds[var].load(), 'y')
         ds[var].attrs = attrs
     
     # we have variables only at rho points now
     ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
     ds = ds.set_coords(['lon','lat'])
 
-    print(ds.U)
-    print(ds.temp)
-
     # mask area where lat and lon == 0.
     lon2D = ds.lon
     lat2D = ds.lat
+    lonmin = np.round( np.nanmin(np.where(lon2D.values<0.,lon2D.values,np.nan)), 1)
+    lonmax = np.round( np.nanmax(np.where(lon2D.values<0.,lon2D.values,np.nan)), 1)
+    latmin = np.round( np.nanmin(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
+    latmax = np.round( np.nanmax(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
+    print('     min lon =', lonmin)
+    print('     max lon =', lonmax)
+    print('     min lat =', latmin)
+    print('     max lat =', latmax)
     ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
     ds['lat'] = xr.where(ds.lon==0.,np.nan,ds.lat)
-
+    ds['mask'] = xr.where(lon2D==0.,0.,1.)
     # new dataset
-    ds_out = xe.util.grid_2d(-80, -30, new_dx, 20, 50, new_dx)
+    ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
     # regridder
     regridder = xe.Regridder(ds, ds_out, "bilinear")
     
     # regriding variable
     print('* Regridding ...')
-    print(str(list(ds.variables)))
+    ds_out['mask'] = regridder(ds['mask'])
     for namevar in list(ds.variables):
-        if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time']:
+        if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask']:
             print('     '+namevar)
             ds_out[namevar] = regridder(ds[namevar])
-    
-    
+            # masking
+            ds_out[namevar] = ds_out[namevar].where(ds_out['mask'])
     
     # replacing x and y with lon1D and lat1D
     ds_out['lon1D'] = ds_out.lon[0,:]
@@ -77,7 +87,13 @@ if __name__ == "__main__":
     ds_out = ds_out.drop_dims(['x_b','y_b'])
     ds_out = ds_out.reset_coords(names=['lon','lat'], drop=True)
     ds_out = ds_out.rename({'lon1D':'lon','lat1D':'lat'})
+
+    # print some stats
+    print('OLD DATASET')
+    print(ds)
+    print('NEW DATASET')
     print(ds_out)
+
 
     # VERIFICATION
     # -> GLOBAL
@@ -85,7 +101,6 @@ if __name__ == "__main__":
     plt.figure(figsize=(9, 5))
     ax = plt.axes(projection=ccrs.PlateCarree())
     ax.pcolormesh(lon2D,lat2D,ds['temp'][0])
-    # temp[0].plot.pcolormesh(ax=ax, x='lon', y='lat')
     ax.coastlines()
     ax.set_title('old')
     ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
@@ -98,8 +113,6 @@ if __name__ == "__main__":
     ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
     for namevar in ['SSH','MLD','U','V','temp','salt','oceTAUX','oceTAUY','Heat_flx_net','frsh_water_net','SW_rad']:
-        print(namevar)
-        print(ds_out[namevar])
         plt.figure(figsize=(9, 5))
         ax = plt.axes(projection=ccrs.PlateCarree())
         ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out[namevar][0])
@@ -107,13 +120,13 @@ if __name__ == "__main__":
         ax.set_title('new')
         ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
-    # ds_out.compute()
-    # ds_out.to_netcdf(path=path_in+filename+'_'+str(new_dx)+'deg.nc',mode='w')
-    # ds.close()
-    # ds_out.close()
+    ds_out.compute()
+    ds_out.to_netcdf(path=path_save+filename+'_'+str(new_dx)+'deg.nc',mode='w')
+    ds.close()
+    ds_out.close()
     
-    # save regridder
-    regridder.to_netcdf(path_in+'regridder_'+str(new_dx)+'deg.nc')
+    # save regridder
+    regridder.to_netcdf(path_save+'regridder_'+str(new_dx)+'deg.nc')
     
     
     end = clock.time()
