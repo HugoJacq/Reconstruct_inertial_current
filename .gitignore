@@ -217,3 +217,7 @@ Croco_Interp_1D_LON-50.0_LAT35.0.nc1MONTH
 gotm_workdir/Croco_LON-50.0_LAT35.0/forcing.txtSAVE
 gotm_workdir/Croco_LON-50.0_LAT35.0/output_file.nc
 gotm_workdir/Croco_LON-50.0_LAT35.0/restart.nc
+gotm_workdir/Croco_LON-53.0_LAT29.5/forcing.txt
+gotm_workdir/Croco_LON-53.0_LAT29.5/output_file.nc
+gotm_workdir/Croco_LON-53.0_LAT29.5/restart.nc
+png_gotm/Croco_LON-50.0_LAT35.0/gotm_vs_Croco_Usfx.png

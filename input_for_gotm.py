@@ -15,7 +15,7 @@ import time as clock
 # LON,LAT location where to save forcing files
 # This should be in an area where lateral processes 
 #   are not dominant.
-point_loc = [-50.,35.]
+point_loc = [-53.,29.5]
 
 # Croco files
 fileC = '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'
