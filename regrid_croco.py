@@ -1,3 +1,12 @@
+"""
+This script regrid Croco ouput to a lower resolution.
+The model is on a C-grid and so some interpolation are needed, 
+    this requires quit a lot of memory so a HPC is highly recommended.
+    
+Note: I still need to verify results.
+
+"""
+
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import numpy as np
@@ -8,13 +17,16 @@ import time as clock
 
 from tools import *
 
+
+
+
 path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
 path_save = path_in
 
-path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
-filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
-path_save = './data_regrid/'
+# path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
+# filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
+# path_save = './data_regrid/'
 
 DASHBOARD = False
 new_dx = 0.1 # °
