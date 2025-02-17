@@ -27,13 +27,15 @@ path_save = './data_regrid/'
 # filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
 # path_save = './data_regrid/'
 
-DASHBOARD = False
-new_dx = 0.1 # °
+DASHBOARD = False           # for Dask, turn ON for debug
+new_dx = 0.1                # °, new resolution
 
-SAVE_FILE = True
-SHOW_DIFF = True
-CHECK_RESULTS = True
+SAVE_FILE = False           # build and save the interpolated file
+SHOW_DIFF = False           # show a map with before/after
 
+CHECK_RESULTS = True        # switch to compute more precise diff
+SHOW_SPACE = False          # show diff along a spatial dimension
+SHOW_TIME = True            # show diff along time
 
 
 
@@ -58,12 +60,16 @@ if __name__ == "__main__":
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
 
-
     if pathlib.Path(new_name+'.nc').is_file():
-        print(' File is already here ....')
-    
-    if SAVE_FILE and not pathlib.Path(new_name+'.nc').is_file():
-        
+        print('-> File is here !')
+        IS_HERE = True
+    else: IS_HERE=False
+            
+            
+    if ( (SAVE_FILE and not IS_HERE ) 
+            or (SHOW_DIFF and not IS_HERE) 
+            or (CHECK_RESULTS and not IS_HERE) ):
+
         print('* Opening file')
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
 
@@ -100,7 +106,7 @@ if __name__ == "__main__":
         # new dataset
         ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
         # regridder
-        regridder = xe.Regridder(ds, ds_out, "bilinear")
+        regridder = xe.Regridder(ds, ds_out, "bilinear", keep_attrs=True)
         
         # regriding variable
         print('* Regridding ...')
@@ -152,29 +158,89 @@ if __name__ == "__main__":
         ax = plt.axes(projection=ccrs.PlateCarree())
         ax.pcolormesh(ds.lon_rho,ds.lat_rho,ds['temp'][it])
         ax.coastlines()
-        ax.set_title('old')
+        ax.set_title('old SST')
         ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
         # after
         plt.figure(figsize=(9, 5))
         ax = plt.axes(projection=ccrs.PlateCarree())
         ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out['temp'][it])
         ax.coastlines()
-        ax.set_title('new')
+        ax.set_title('new SST')
         ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
         for namevar in ['SSH','MLD','U','V','temp','salt','oceTAUX','oceTAUY','Heat_flx_net','frsh_water_net','SW_rad']:
             plt.figure(figsize=(9, 5))
             ax = plt.axes(projection=ccrs.PlateCarree())
-            ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out[namevar][it])
+            s = ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out[namevar][it])
+            plt.colorbar(s,ax=ax)
             ax.coastlines()
             ax.set_title('new '+namevar)
             ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
     if CHECK_RESULTS:
         print('* Checking results validity')
-    
-    
-    
-    
+        
+        # visual plot at a specific LAT
+        LAT = 38. # °N
+        LON_min = -60. #°E
+        LON_max = -55. #°E
+        it = 0
+        list_var = ['SSH','temp'] # ,'temp'
+        N_CPU=15 # indice search in //
+        
+        # here we work on rho-located variables to avoid interpolation
+        ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
+        ds_i = xr.open_dataset(new_name+'.nc')
+        time = ds_i.time
+        print(ds_i)
+        # SST, SSH, H
+        
+        
+        
+        
+        # new grid
+        indy_n = nearest(ds_i.lat.values,LAT)
+        new_lon_min = np.round(np.min(ds_i.lon.values),2)
+        new_lon_max = np.round(np.max(ds_i.lon.values),2)
+        
+        # old grid 
+        # is lat,lon 2D so we need to find the values at similar location
+        olddx = 0.02
+        oldlon = ds.lon_rho.values
+        oldlat = ds.lat_rho.values
+        search_lon = np.arange(LON_min,LON_max,olddx)
+        dictvar = {}
+        L_points = []
+        
+        if SHOW_SPACE:
+            # find indices in //
+            for ik in range(len(search_lon)):
+                LON = search_lon[ik]
+                L_points.append([LON,LAT])
+            L_indices = find_indices_ll(L_points, oldlon, oldlat, N_CPU=15)
+            for namevar in list_var:
+                dictvar[namevar] = [ds[namevar][it,indices[0][1],indices[0][0]].values for indices in L_indices] 
+            
+            
+            # plot: slice at LAT
+            fig, ax = plt.subplots(len(list_var),1,figsize = (len(list_var)*5,5),constrained_layout=True,dpi=200) 
+            for k, namevar in enumerate(list_var):
+                ax[k].plot(search_lon, dictvar[namevar],c='k',label='truth')
+                ax[k].scatter(ds_i.lon,ds_i[namevar][it,indy_n,:],c='b',label='interp',marker='x')
+                ax[k].set_xlim([LON_min,LON_max])
+                ax[k].set_ylabel(namevar)
+            ax[-1].set_xlabel('LON')
+        if SHOW_TIME:
+            # plot: slice at LAT,LON_max
+            select_LON = LON_min
+            indx,indy = find_indices([select_LON,LAT],oldlon,oldlat)[0]
+            indx_n = nearest(ds_i.lon.values,select_LON)
+            fig, ax = plt.subplots(len(list_var),1,figsize = (len(list_var)*5,5),constrained_layout=True,dpi=200) 
+            for k, namevar in enumerate(list_var):
+                ax[k].plot(time, ds[namevar][:,indy,indx],c='k',label='truth')
+                ax[k].scatter(time, ds_i[namevar][:,indy_n,indx_n],c='b',label='interp',marker='x')
+                ax[k].set_ylabel(namevar)
+            ax[-1].set_xlabel('time')
+            ax[0].set_title('at LON,LAT='+str(select_LON)+','+str(LAT))
         
     plt.show()

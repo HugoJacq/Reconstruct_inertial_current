@@ -8,6 +8,7 @@ from scipy.fftpack import fft
 import warnings
 import xarray as xr
 from xgcm import Grid as xGrid
+from joblib import Parallel, delayed
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.
@@ -139,7 +140,7 @@ def score_RMSE(U,Ut):
 
 def nearest(array,value):
 	"""
-	Array is 1D
+	Array is 1D,
 	value is 0D
 	"""
 	return np.argmin(np.abs(array-value))	
@@ -152,6 +153,18 @@ def find_indices(points,lon,lat,tree=None):
     dist,idx = tree.query(points,k=1)
     ind = np.column_stack(np.unravel_index(idx,lon.shape))
     return [(i,j) for i,j in ind]
+
+def find_indices_ll(L_points, lon, lat, N_CPU):
+	"""
+	Parallel version of 'find_indices'
+	
+	returns a list of indices (tuples)
+	"""
+	# for ik in range(len(L_points)):
+	# 	LON = L_points[ik]
+	# 	indx,indy = find_indices([LON,LAT],oldlon,oldlat)[0]
+	list_results = Parallel(n_jobs=N_CPU)(delayed(find_indices)(L_points[ik], lon, lat) for ik in range(len(L_points)))
+	return list_results
 
 def find_indices_gridded_latlon(LON, LON_bounds, LAT, LAT_bounds):
 	"""
