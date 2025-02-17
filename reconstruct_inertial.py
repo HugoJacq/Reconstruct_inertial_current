@@ -39,15 +39,15 @@ jax.config.update("jax_enable_x64", True)
 
 
 # custom imports
-from OSSE import *
-from observations import *
-from forcing import *
-from unstek import *
-from junstek import *
-from inv import *
-from tools import *
-from scores import *
-from benchmark import *
+from src.OSSE import *
+from src.observations import *
+from src.forcing import *
+from src.unstek import *
+from src.junstek import *
+from src.inv import *
+from src.tools import *
+from src.scores import *
+from src.benchmark import *
 
 start = clock.time()
 
