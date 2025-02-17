@@ -31,11 +31,11 @@ DASHBOARD = False           # for Dask, turn ON for debug
 new_dx = 0.1                # °, new resolution
 
 SAVE_FILE = False           # build and save the interpolated file
-SHOW_DIFF = False           # show a map with before/after
 
+SHOW_DIFF = True            # show a map with before/after
 CHECK_RESULTS = True        # switch to compute more precise diff
-SHOW_SPACE = False          # show diff along a spatial dimension
-SHOW_TIME = True            # show diff along time
+SHOW_SPACE = True           # if CHECK_RESULTS: show diff along a spatial dimension
+SHOW_TIME = True            # if CHECK_RESULTS: show diff along time
 
 
 
@@ -105,6 +105,8 @@ if __name__ == "__main__":
         ds['mask'] = xr.where(lon2D==0.,0.,1.)
         # new dataset
         ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
+        print(ds_out)
+        raise Exception
         # regridder
         regridder = xe.Regridder(ds, ds_out, "bilinear", keep_attrs=True)
         
@@ -154,7 +156,7 @@ if __name__ == "__main__":
         # VERIFICATION
         # -> GLOBAL
         # before
-        plt.figure(figsize=(9, 5))
+        plt.figure(figsize=(9, 5),dpi=200)
         ax = plt.axes(projection=ccrs.PlateCarree())
         ax.pcolormesh(ds.lon_rho,ds.lat_rho,ds['temp'][it])
         ax.coastlines()
@@ -169,7 +171,7 @@ if __name__ == "__main__":
         ax.set_extent([-80, -36, 22, 50], crs=ccrs.PlateCarree())
 
         for namevar in ['SSH','MLD','U','V','temp','salt','oceTAUX','oceTAUY','Heat_flx_net','frsh_water_net','SW_rad']:
-            plt.figure(figsize=(9, 5))
+            plt.figure(figsize=(9, 5),dpi=200)
             ax = plt.axes(projection=ccrs.PlateCarree())
             s = ax.pcolormesh(ds_out.lon,ds_out.lat,ds_out[namevar][it])
             plt.colorbar(s,ax=ax)

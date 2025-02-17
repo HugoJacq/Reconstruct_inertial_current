@@ -1193,6 +1193,8 @@ if __name__ == "__main__":
         # quand je run le boucle interne, mettre un K qui a juste une dimension pour le nb de layer.
         # la je save le vecteur K sur tous les dt du model mais ca sert à rien
         
+        # explorer les checkpoints de JAX pour ne calculer le gradient qu'aux points où je compare avec les obs
+        
         raise Exception   
         res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
                         method='L-BFGS-B',
@@ -1256,9 +1258,12 @@ if __name__ == "__main__":
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
+    #       -> le vecteur final est vraiment =/=, mais souvent une des composantes ne bouge pas -> un parametre inutile ?
     # - préparation modèle 2D: modele 1D appliqué à une grille 5°/5°
+    #       WIP: 17/02/25 regrid Croco is ok
     # - rotary spectra sur un grand domaine spatial pour meilleur convergence
-    # - DONE: télécharger fichier janvier Croco (et fichier été ?)
+    # - télécharger fichier janvier Croco (et fichier été ?)
+    #       Done
     # - ekman depth vs MLD: comparer (1D, f(time) )
     #       model simple 2 couches avec K obtenu par minimization
     #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
