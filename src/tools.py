@@ -9,6 +9,7 @@ import warnings
 import xarray as xr
 from xgcm import Grid as xGrid
 from joblib import Parallel, delayed
+import matplotlib.pyplot as plt
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.

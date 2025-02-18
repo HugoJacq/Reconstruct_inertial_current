@@ -232,3 +232,8 @@ data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg.nc
 data_regrid/regridder_0.1deg.nc
 src/__pycache__/__init__.cpython-310.pyc
 src/__pycache__/tools.cpython-310.pyc
+data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc
+croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg.nc
+data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc
+data_regrid/regridder_0.1deg_bilinear.nc
+data_regrid/regridder_0.1deg_conservative.nc

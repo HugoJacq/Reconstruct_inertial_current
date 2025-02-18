@@ -19,35 +19,34 @@ import sys
 
 from src.tools import *
 
-path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
 path_save = './data_regrid/'
 
-# path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
-# filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
-# path_save = './data_regrid/'
+#path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
+path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
 
 DASHBOARD = False           # for Dask, turn ON for debug
 new_dx = 0.1                # °, new resolution
-
+method = 'conservative'     # conservative or bilinear
 SAVE_FILE = False           # build and save the interpolated file
 
-SHOW_DIFF = True            # show a map with before/after
+SHOW_DIFF = False            # show a map with before/after
 CHECK_RESULTS = True        # switch to compute more precise diff
 SHOW_SPACE = True           # if CHECK_RESULTS: show diff along a spatial dimension
 SHOW_TIME = True            # if CHECK_RESULTS: show diff along time
-
+BILI_VS_CONS = False         # if CHECK_RESULTS: show diff bilinear - conservative
 
 
 if __name__ == "__main__": 
     start = clock.time()
-    new_name = path_save+filename+'_'+str(new_dx)+'deg'
+    new_name = path_save+filename+'_'+str(new_dx)+'deg'+'_'+method
     
     print('====================================') 
     print('* Regrid process of Croco file')
     print('* input : '+path_in+filename+'.nc')
     print('* ouput : '+new_name+'.nc')
     print('*    new res : '+str(new_dx)+'°')
+    print('* method is : '+method)
     print('====================================')
     
     global client
@@ -72,7 +71,7 @@ if __name__ == "__main__":
 
         print('* Opening file')
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
-
+        
         print('* Interpolation at mass point...')
         L_u = ['U','oceTAUX']
         L_v = ['V','oceTAUY']
@@ -88,6 +87,19 @@ if __name__ == "__main__":
         # we have variables only at rho points now
         ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
         ds = ds.set_coords(['lon','lat'])
+        
+
+        ##### WIP
+        if method=='conservative':
+            
+            ds['lon_b'] = xr.DataArray(ds.lon_u.data[1:,:], dims=["y_u", "x_u"]) # coords=[times, locs]
+            ds['lat_b'] = xr.DataArray(ds.lat_v.data[:,1:], dims=["y_v", "x_v"])   
+            ds = ds.set_coords(['lon_b','lat_b'])
+            #ds['lat_b'] = ds.lat_v
+            ds = ds.isel(x_rho=slice(0,-2),y_rho=slice(0,-2))
+
+        ds = ds.reset_coords(['lon_v','lat_v','lon_u','lat_u'],drop=True)
+        #####
 
         # mask area where lat and lon == 0.
         lon2D = ds.lon
@@ -101,20 +113,29 @@ if __name__ == "__main__":
         print('     min lat =', latmin)
         print('     max lat =', latmax)
         ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
-        ds['lat'] = xr.where(ds.lon==0.,np.nan,ds.lat)
+        ds['lat'] = xr.where(ds.lat==0.,np.nan,ds.lat)
+        #ds['lon_u'] = xr.where(ds.lon_u==0.,np.nan,ds.lon)
+        #ds['lat_u'] = xr.where(ds.lat_u==0.,np.nan,ds.lat)
+        #ds['lon_v'] = xr.where(ds.lon_v==0.,np.nan,ds.lon)
+        #ds['lat_v'] = xr.where(ds.lat_v==0.,np.nan,ds.lat)
+        ds['lon_b'] = xr.where(ds.lon_b==0.,np.nan,ds.lon_b)
+        ds['lat_b'] = xr.where(ds.lat_b==0.,np.nan,ds.lat_b)
         ds['mask'] = xr.where(lon2D==0.,0.,1.)
         # new dataset
         ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
-        print(ds_out)
-        raise Exception
         # regridder
-        regridder = xe.Regridder(ds, ds_out, "bilinear", keep_attrs=True)
+        print(ds)
+        print(ds_out)
+        
+        
+        
+        regridder = xe.Regridder(ds, ds_out, method) # bilinear conservative
         
         # regriding variable
         print('* Regridding ...')
         ds_out['mask'] = regridder(ds['mask'])
         for namevar in list(ds.variables):
-            if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask']:
+            if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask','lon_b','lat_b']:
                 print('     '+namevar)
                 ds_out[namevar] = regridder(ds[namevar])
                 # masking
@@ -135,14 +156,14 @@ if __name__ == "__main__":
         print('NEW DATASET')
         print(ds_out)
 
-
+        ds_out.attrs['xesmf_method'] = method
         ds_out.compute()
-        ds_out.to_netcdf(path=new_name + 'nc',mode='w')
+        ds_out.to_netcdf(path=new_name + '.nc',mode='w')
         ds.close()
         ds_out.close()
         
         # save regridder
-        regridder.to_netcdf(path_save+'regridder_'+str(new_dx)+'deg.nc')
+        regridder.to_netcdf(path_save+'regridder_'+str(new_dx)+'deg_'+method+'.nc')
         
         end = clock.time()
         print('Total execution time = '+str(np.round(end-start,2))+' s')
@@ -187,14 +208,14 @@ if __name__ == "__main__":
         LON_min = -60. #°E
         LON_max = -55. #°E
         it = 0
-        list_var = ['SSH','temp'] # ,'temp'
+        list_var = ['SSH','temp','U','V'] # ,'temp'
         N_CPU=15 # indice search in //
         
         # here we work on rho-located variables to avoid interpolation
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
         ds_i = xr.open_dataset(new_name+'.nc')
         time = ds_i.time
-        print(ds_i)
+        #print(ds_i)
         # SST, SSH, H
         
         
@@ -245,4 +266,23 @@ if __name__ == "__main__":
             ax[-1].set_xlabel('time')
             ax[0].set_title('at LON,LAT='+str(select_LON)+','+str(LAT))
         
+        if BILI_VS_CONS:
+            dsc = xr.open_mfdataset(path_save+'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
+            dsb = xr.open_mfdataset(path_save+'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc')
+            
+            print(dsc)
+            print(dsb)
+            
+            
+            for k, namevar in enumerate(list_var):
+                fig, ax = plt.subplots(1,1,figsize = (len(list_var)*5,5),constrained_layout=True,dpi=200) 
+                
+                s = ax.pcolormesh(dsc.lon,dsc.lat, dsb[namevar][it,:-1,:]-dsc[namevar][it,:,:],cmap='bwr')
+                plt.colorbar(s,ax=ax)
+                ax.set_ylabel('lat')
+                ax.set_xlabel('lon')
+                ax.set_title(namevar+' bili minus cons')
+            
+            
+            
     plt.show()
