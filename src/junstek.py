@@ -223,6 +223,7 @@ class jUnstek1D_Kt:
         self.nt = len(forcing.time)
         self.dt = forcing.time[1] - forcing.time[0]
         self.forcing_time = forcing.time
+        self.dt_forcing = forcing.dt_forcing
         self.model_time = jnp.arange(0,self.nt*self.dt,self.dt)
         # forcing
         self.TA = jnp.asarray(forcing.TAx) + 1j*jnp.asarray(forcing.TAy) # wind = windU + j*windV
@@ -763,8 +764,8 @@ class jUnstek1D_Kt_spatial:
         # (pour obtenir une trajectoire si, quand le K est final)
         # save every hour (model OSSE)
         U = jnp.zeros( (self.nl, self.nt, self.ny, self.nx), dtype='complex')
-        print(U.shape)
-        print(U.dtype)
+        # print(U.shape)
+        # print(U.dtype)
         
         # i need to fill in U only at
         #   dt if save_all_dt=True
@@ -787,7 +788,6 @@ class jUnstek1D_Kt_spatial:
         M = self.pkt2Kt_matrix(gtime=self.model_time)
         Kt = jnp.dot(M,K)  
         
-        
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
             # lax.fori_loop
@@ -804,3 +804,23 @@ class jUnstek1D_Kt_spatial:
         self.Ua, self.Va = jnp.real(U[0,:]), jnp.imag(U[0,:])  # first layer
         
         return pk, U
+
+    # SOME THOUGHTS ========================
+        
+    # i need to adapt 'jax_cost' to take into account that U is on a hourly time vector now
+    
+    # the scan (and sot fori_loop) saves a copy of every array in it. 
+    # So i need to modifiy my first loop to remove the array U from it, only keeping the last update
+    #   and then update U in the main body of the function ...
+    
+    # note: using grad instead of jcfw is not the solution
+    #       because it wants 63Go of memory (11 Go for the jcfw)
+    
+    # quand je run le boucle interne, mettre un K qui a juste une dimension pour le nb de layer.
+    # la je save le vecteur K sur tous les dt du model mais ca sert à rien
+    
+    # explorer les checkpoints de JAX pour ne calculer le gradient qu'aux points où je compare avec les obs
+    
+    # AFTER ALL THE ABOVE: i reduced the forcing dataset to a lower res regrid product and this reduces greatly the cost !
+    
+    # ========================================================================

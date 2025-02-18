@@ -18,7 +18,7 @@ class Forcing1D:
         self.fc = 2*2*np.pi/86164*np.sin(self.data.lat.values*np.pi/180) # Coriolis value at jr,ir
         self.nt = len(self.data.time)
         self.time = np.arange(0,self.nt*dt,dt)    # 1 step every dt
-        self.dt = dt
+        self.dt_forcing = dt
         
         # wind stress
         if TRUE_WIND_STRESS:

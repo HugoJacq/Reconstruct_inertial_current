@@ -48,6 +48,7 @@ class Variational:
         self.observations = observations
         self.obs_period = observations.obs_period
         self.model_dt = model.dt
+        self.dt_forcing = model.dt_forcing
         self.model = model
         self.param = []
         self.J = []
@@ -126,8 +127,8 @@ class Variational:
         
         A = jnp.zeros( self.Uo.shape, dtype='float64')
         B = jnp.zeros( self.Uo.shape, dtype='float64')
-        A = A.at[:].set(U[::self.obs_period//self.model_dt])
-        B = B.at[:].set(V[::self.obs_period//self.model_dt])
+        A = A.at[:].set(U[::self.obs_period//self.dt_forcing])
+        B = B.at[:].set(V[::self.obs_period//self.dt_forcing])
         J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         return J 
  

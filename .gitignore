@@ -248,3 +248,5 @@ src/__pycache__/observations.cpython-310.pyc
 src/__pycache__/scores.cpython-310.pyc
 src/__pycache__/unstek.cpython-310.pyc
 JAX_test_junstek1D_kt_spatial_1layers.png
+JAX_test_junstek1D_kt_2layers.png
+JAX_test_junstek1D_kt_spatial_2layers.png

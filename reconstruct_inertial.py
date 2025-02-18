@@ -66,8 +66,8 @@ ON_HPC      = True      # on HPC
 point_loc_source = {'MITgcm':[-24.8,45.2], # °E,°N
                     'Croco':[-50.,35.]}
 # 2D
-LON_bounds = [-55.,-50.]
-LAT_bounds = [30.,35.]
+LON_bounds = [-50.2,-49.8]
+LAT_bounds = [34.8,35.2]
 
 # -> Observations : OSSE
 SOURCE              = 'Croco'   # MITgcm Croco
@@ -105,6 +105,7 @@ PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croc
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
 TEST_JUNSTEK1D_KT       = True     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
+REGRID_vs_FINE          = True      # compare at 'point_loc' original and regrid 
 
 BENCHMARK_ALL           = False     # performance benchmark
 
@@ -1047,8 +1048,8 @@ if __name__ == "__main__":
         """  
         
         dT = 28*86400 # s
-        vector_k = jnp.asarray([-11.31980127, -10.28525189])
-        #vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+        #vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
         Nl = len(vector_k)//2
         forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
@@ -1103,14 +1104,15 @@ if __name__ == "__main__":
                         Memory usage is too high, do I need to code better in JAX ? 
                         I need to look more into JAX checkpoint.
                         Maybe ask Florian how he does it with MSSH ?
+                        
+        Hugo 18/02/2025 : I regridded the forcing dataset, now at 0.1deg so its super fast.
+                        But my minimization doesnt work anymore
+                        -> fixed
+                        
+                        - now it works, model runs, minimisation converges.
         """
-        # 5°x5°,dt=1h -> 3Go
-        # 5°x5°,dt=1min -> 3*60=180Go
-        
-        # LON_bounds = [-55.,-54.]
-        # LAT_bounds = [30.,31.]
         N_CPU = 1
-        Nl = 1
+        Nl = 2
         dT = 28*86400 # s
         dt_forcing = 3600 # s
         dt = 60 # model timestep
@@ -1131,11 +1133,11 @@ if __name__ == "__main__":
 
         # transform into 1D vector
         vector_kt = model.kt_ini(vector_k)
-        
+        print('vector_kt',vector_kt)
 
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_kt)
-        print(Ca.shape)
+
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
@@ -1198,34 +1200,16 @@ if __name__ == "__main__":
             plt.show()
         
         
-        
-        # SOME THOUGHTS:
-        
-        # i need to adapt 'jax_cost' to take into account that U is on a hourly time vector now
-        
-        # the scan (and sot fori_loop) saves a copy of every array in it. 
-        # So i need to modifiy my first loop to remove the array U from it, only keeping the last update
-        #   and then update U in the main body of the function ...
-        
-        # note: using grad instead of jcfw is not the solution
-        #       because it wants 63Go of memory (11 Go for the jcfw)
-        
-        # quand je run le boucle interne, mettre un K qui a juste une dimension pour le nb de layer.
-        # la je save le vecteur K sur tous les dt du model mais ca sert à rien
-        
-        # explorer les checkpoints de JAX pour ne calculer le gradient qu'aux points où je compare avec les obs
-        
-        # AFTER ALL THE ABOVE: i reduced the forcing dataset to a lower res regrid product and this reduces greatly the cost !
-           
-        # res = opt.minimize(var.cost, vector_kt, args=(save_iter),
-        #                 method='L-BFGS-B',
-        #                 jac=var.grad_cost,
-        #                 options={'disp': True, 'maxiter': 10})
+         
+        res = opt.minimize(var.cost, vector_kt, args=(save_iter),
+                        method='L-BFGS-B',
+                        jac=var.grad_cost,
+                        options={'disp': True, 'maxiter': maxiter})
             
-        # print_info(var.cost,res)
-        # vector_kt = res['x']
-        # _, Ca = model.do_forward_jit(vector_kt)
-        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print_info(var.cost,res)
+        vector_kt = res['x']
+        _, Ca = model.do_forward_jit(vector_kt)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
         # select at location
         indx = nearest(forcing2D.data.lon.values,point_loc[0])
@@ -1238,16 +1222,16 @@ if __name__ == "__main__":
         RMSE = score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
-        plt.figure(figsize=(10,3),dpi=dpi)
-        plt.plot(forcing2D.time/86400, U, c='k', lw=2, label='Croco')
-        plt.plot(forcing2D.time/86400, Ua, c='g', label='Unstek')
-        plt.scatter(observations2D.time_obs/86400,Uo, c='r', label='obs')
-        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
-        plt.xlabel('Time (days)')
-        plt.ylabel('Ageo zonal current (m/s)')
-        plt.legend(loc=1)
-        plt.tight_layout()
-        plt.savefig('JAX_test_junstek1D_kt_spatial_'+str(Nl)+'layers.png')
+        fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
+        ax.plot(forcing2D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing2D.time/86400, Ua, c='g', label='Unstek')
+        ax.scatter(observations2D.time_obs/86400,Uo, c='r', label='obs')
+        ax.set_ylim([-0.3,0.4])
+        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Ageo zonal current (m/s)')
+        ax.legend(loc=1)
+        fig.savefig('JAX_test_junstek1D_kt_spatial_'+str(Nl)+'layers.png')
     
     # execution benchmark   
     if BENCHMARK_ALL:
@@ -1283,7 +1267,52 @@ if __name__ == "__main__":
                         jUnstek1D(Nl, forcing=forcing, observations=observations),
                         jUnstek1D_Kt(Nl, forcing=forcing, observations=observations, dT=dT)]
             benchmark_all(pk, Lmodel, observations, Nexec)
-         
+      
+    if REGRID_vs_FINE:
+        print('* Comparing regrid and original Croco')
+        dsfine, xgrid = open_croco_sfx_file(['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
+        
+        ds1D = xr.open_dataset(path_file)
+        dsregridc = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
+        dsregridb = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc')
+        
+        indices = find_indices_gridded_latlon(dsfine.lon_rho.values, 
+                                              [point_loc[0]-0.1,point_loc[0]+0.1], 
+                                              dsfine.lat_rho.values, 
+                                              [point_loc[1]-0.1,point_loc[1]+0.1])
+        indxmin,indxmax,indymin,indymax = indices
+        
+        indx = nearest(dsregridc.lon.values,point_loc[0])
+        indy = nearest(dsregridc.lat.values,point_loc[1])
+        
+        fig, ax = plt.subplots(3,1,figsize = (10,7),constrained_layout=True,dpi=dpi)
+        ax[0].plot( dsfine.time, dsfine.U.isel(x_u=slice(indxmin,indxmax), 
+                                               y_rho=slice(indymin,indymax)).mean(dim=['x_u','y_rho']), label='croco', c='k')
+        ax[0].plot( ds1D.time, ds1D.U,label=' 1D file', c='b')
+        ax[0].plot( dsregridc.time, dsregridc.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
+        ax[0].plot( dsregridb.time, dsregridb.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        ax[0].legend()
+        ax[0].set_ylabel('U')
+        ax[0].set_ylim([-0.3,0.4])
+        
+        ax[1].plot( dsfine.time, dsfine.SSH.isel(x_rho=slice(indxmin,indxmax), 
+                                               y_rho=slice(indymin,indymax)).mean(dim=['x_rho','y_rho']), label='croco', c='k')
+        ax[1].plot( ds1D.time, ds1D.SSH,label=' 1D file', c='b')
+        ax[1].plot( dsregridc.time, dsregridc.SSH.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
+        ax[1].plot( dsregridb.time, dsregridb.SSH.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        ax[1].legend()
+        ax[1].set_ylabel('SSH')
+        
+        ax[2].plot( dsfine.time, dsfine.oceTAUX.isel(x_u=slice(indxmin,indxmax), 
+                                               y_rho=slice(indymin,indymax)).mean(dim=['x_u','y_rho']), label='croco', c='k')
+        ax[2].plot( ds1D.time, ds1D.oceTAUX,label=' 1D file', c='b')
+        ax[2].plot( dsregridc.time, dsregridc.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
+        ax[2].plot( dsregridb.time, dsregridb.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        ax[2].legend()
+        ax[2].set_ylabel('oceTAUX')
+        #ax[2].set_ylim([-0.3,0.4])
+        
+          
     # TO DO:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
@@ -1300,9 +1329,14 @@ if __name__ == "__main__":
     
     
     # test obs : original vs regrid file at 'point_loc'
-    # merge version of junstek1D_kt and junstek1D_kt_spatial
+    #   -> done, its ok. 
+    #      note: my 1D interpolation if off, i need to adapt old versions of unstek to use the new regrid file
+    # merge version of junstek1D_kt and junstek1D_kt_spatial : diff in implementation
     # cleanup junstek1D_kt_spatial
+    # use the regrid product even for 1D cases
     
+    # Note pour Hugo:
+    # A faire: clean up ce fichier, enlever les option pour MITgcm.
     
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')

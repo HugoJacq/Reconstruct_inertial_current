@@ -48,10 +48,7 @@ class Observation2D:
         self.dt = dt_model
         self.obs_period = periode_obs
         
-        print(len(self.data.time))
-        
         self.time_obs = np.arange(0, len(self.data.time)*dt_model,periode_obs)
-        print(self.time_obs)
 
     def get_obs(self):
         """
