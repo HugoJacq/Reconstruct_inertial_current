@@ -237,3 +237,4 @@ croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg.nc
 data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc
 data_regrid/regridder_0.1deg_bilinear.nc
 data_regrid/regridder_0.1deg_conservative.nc
+src/__pycache__/OSSE.cpython-310.pyc

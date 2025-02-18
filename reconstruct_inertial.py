@@ -32,7 +32,7 @@ import cartopy.crs as ccrs
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 from matplotlib import ticker as mticker
 #import jax.numpy as jnp
-#import jax
+import jax
 jax.config.update("jax_enable_x64", True)
 # jax.config.update('jax_platform_name', 'cpu')
 
@@ -102,7 +102,8 @@ PLOT_CROCO_PROFILES     = True      # plot the vertical profiles from croco, at 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
 TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
-TEST_JUNSTEK1D_KT_SPATIAL = False   # implementing jUnstek1D_spatial
+TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
+
 BENCHMARK_ALL           = False     # performance benchmark
 
     
@@ -958,7 +959,6 @@ if __name__ == "__main__":
             
         # Getting the values from file        
            
-     
     # Looking at profiles in Croco          
     if PLOT_CROCO_PROFILES:
         """
@@ -975,8 +975,7 @@ if __name__ == "__main__":
         #ds = 
         
         print(ds)        
-              
-                      
+                               
     # TESTS
     if TEST_ROTARY_SPECTRA:
         
@@ -1118,7 +1117,8 @@ if __name__ == "__main__":
             vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
  
         print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
-        file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
+        #file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
+        file = 'data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
         
         forcing2D = Forcing2D(dt_forcing,file,TRUE_WIND_STRESS)
         observations2D = Observation1D(period_obs, dt, file)
