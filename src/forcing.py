@@ -34,13 +34,20 @@ class Forcing1D:
 class Forcing2D:
     """
     Forcing fields for :
-        - 'jUnstek1D_spatial'
-        -
+        - 'jUnstek1D_Kt_spatial'
+        
     """
-    def __init__(self, dt, path_file, TRUE_WIND_STRESS):
+    def __init__(self, dt, path_file, TRUE_WIND_STRESS, LON_bounds, LAT_bounds):
         
         # from dataset
-        self.data = xr.open_dataset(path_file)       
+        ds = xr.open_dataset(path_file)       
+        
+        indxmin = nearest(ds.lon.values,LON_bounds[0])
+        indxmax = nearest(ds.lon.values,LON_bounds[1])
+        indymin = nearest(ds.lat.values,LAT_bounds[0])
+        indymax = nearest(ds.lat.values,LAT_bounds[1])
+        
+        self.data = ds.isel(lon=slice(indxmin,indxmax),lat=slice(indymin,indymax))
         
         self.U,self.V,self.MLD = self.data.U.values,self.data.V.values,self.data.MLD
         if 'TAx' in self.data.keys():
@@ -61,4 +68,8 @@ class Forcing2D:
                 print('     no wind in the file, I will use true windstress and not cd*U**2')
                 print('         TRUE_WINDSTRESS turned to TRUE')
                 self.TAx,self.TAy = self.oceTx,self.oceTy
-    
+
+        
+        
+        
+        

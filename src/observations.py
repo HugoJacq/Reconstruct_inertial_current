@@ -1,6 +1,8 @@
 import numpy as np
 import xarray as xr
 
+from tools import *
+
 class Observation1D:
     """
     Observations of currents fields for 'Unstek1D'
@@ -26,10 +28,16 @@ class Observation2D:
     """
     Observations of currents fields for 'Unstek1D', 2D (spatial)
     """
-    def __init__(self, periode_obs, dt_model, path_file):
+    def __init__(self, periode_obs, dt_model, path_file, LON_bounds, LAT_bounds):
         
         # from dataset for OSSE
-        self.data = xr.open_dataset(path_file)
+        ds = xr.open_dataset(path_file)
+        indxmin = nearest(ds.lon.values,LON_bounds[0])
+        indxmax = nearest(ds.lon.values,LON_bounds[1])
+        indymin = nearest(ds.lat.values,LAT_bounds[0])
+        indymax = nearest(ds.lat.values,LAT_bounds[1])
+        
+        self.data = ds.isel(lon=slice(indxmin,indxmax),lat=slice(indymin,indymax))
         self.U,self.V = self.data.U.values,self.data.V.values
         self.dt = dt_model
         self.obs_period = periode_obs

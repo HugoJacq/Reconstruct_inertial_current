@@ -473,17 +473,17 @@ class jUnstek1D_Kt_spatial:
     
     Written in JAX formalism.
     """
-    def __init__(self, dt, Nl, forcing, observation, dT):
+    def __init__(self, dt, Nl, forcing, dT):
         """
         dt : model time step
         Nl : number of layers
-        forcing : class Forcing1D (on a different timestep)
+        forcing : class Forcing2D (on a different timestep)
         dT : seconds, period of change of K in time
         """
         # from dataset
         self.nt = len(forcing.time)
-        self.nx = forcing.data.sizes['x_rho']
-        self.ny = forcing.data.sizes['y_rho']
+        self.nx = forcing.data.sizes['lon']
+        self.ny = forcing.data.sizes['lat']
         self.dt_forcing = forcing.dt_forcing # 1 hour
         self.dt = int(dt) # dt seconds
         self.ntm = forcing.time[-1]//dt
@@ -762,7 +762,6 @@ class jUnstek1D_Kt_spatial:
         # (pour obtenir une trajectoire si, quand le K est final)
         # save every hour (model OSSE)
         U = jnp.zeros( (self.nl, self.nt, self.ny, self.nx), dtype='complex')
-        
         print(U.shape)
         print(U.dtype)
         

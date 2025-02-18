@@ -1,18 +1,15 @@
 import numpy as np
-import scipy as sp
 import xarray as xr
 from xgcm import Grid as xGrid
-from constants import *
 import pathlib
 from datetime import timedelta
-#import xcroco as xc
-import matplotlib.pyplot as plt
+
 import warnings
-import dask.array as da
 from memory_profiler import profile
 
 from filters import *
 from tools import *
+from constants import *
 #from adapt_croco_to_xgcm import *
  
 class Model_source_OSSE:

@@ -12,7 +12,7 @@ Updates:
 """
 import os
 #os.environ["OMP_NUM_THREADS"] = "1" # force mono proc
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true" # for jax
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false" # for jax
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '.125' # for jax, percentage of pre allocated GPU mem
 #print(os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"])
 #print(os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"])
@@ -39,6 +39,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 # custom imports
+sys.path.append('./src/')
 from src.OSSE import *
 from src.observations import *
 from src.forcing import *
@@ -58,7 +59,7 @@ start = clock.time()
 DASHBOARD   = False     # when using dask
 N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = False      # on HPC
+ON_HPC      = True      # on HPC
 
 # -> area of interest
 # 1D
@@ -97,7 +98,7 @@ ONE_LAYER_COST_MAP      = False     # maps the cost function values
 TWO_LAYER_COST_MAP_K1K2 = False     # maps the cost function values, K0 K4 fixed
 LINK_K_AND_PHYSIC       = False     # link the falues of vector K with physical variables
 CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an hypercube
-PLOT_CROCO_PROFILES     = True      # plot the vertical profiles from croco, at point_loc
+PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croco, at point_loc
 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
@@ -242,9 +243,10 @@ if __name__ == "__main__":
     model_source = Model_source_OSSE(SOURCE, files_list_all)
         
     interp_at_model_t_1D(model_source, dt, point_loc, N_CPU, path_save_interped)
-    print('* Interpolation on unsteady ekman model timestep 2D')
+    #print('* Interpolation on unsteady ekman model timestep 2D')
     # building 2D+time file on Junstek_Kt_spatial time grid
-    interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
+    # this is now done on the fly in junstek1D_Kt_spatial
+    # interp_at_model_t_2D(model_source, dt, LON_bounds, LAT_bounds, N_CPU, path_save_interped)
         
     (nameLon_u, nameLon_v, nameLon_rho,
      nameLat_u, nameLat_v, nameLat_rho, 
@@ -1118,11 +1120,12 @@ if __name__ == "__main__":
  
         print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
         #file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
-        file = 'data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
+        file = './data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
         
-        forcing2D = Forcing2D(dt_forcing,file,TRUE_WIND_STRESS)
-        observations2D = Observation1D(period_obs, dt, file)
-        model = jUnstek1D_Kt_spatial(dt=dt, Nl=Nl, forcing=forcing2D, observation=observations2D, dT=dT)
+        forcing2D = Forcing2D(dt_forcing, file, TRUE_WIND_STRESS, LON_bounds, LAT_bounds)
+        observations2D = Observation2D(period_obs, dt, file, LON_bounds, LAT_bounds)
+        print(observations2D.data)
+        model = jUnstek1D_Kt_spatial(dt, Nl, forcing2D, dT)
         var = Variational(model, observations2D)
 
         t1 = clock.time()
@@ -1132,25 +1135,25 @@ if __name__ == "__main__":
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
-        # _, Ca = model.do_forward_jit(vector_k)
-        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
-        # print('time, forward model (no compile)',clock.time()-t2)
+        _, Ca = model.do_forward_jit(vector_k)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
         
-        # t3 = clock.time()
-        # J = var.cost(vector_k)
-        # print('time, cost (with compile)',clock.time()-t3)
+        t3 = clock.time()
+        J = var.cost(vector_k)
+        print('time, cost (with compile)',clock.time()-t3)
 
-        # t4 = clock.time()
-        # J = var.cost(vector_k)
-        # print('time, cost (no compile)',clock.time()-t4)
+        t4 = clock.time()
+        J = var.cost(vector_k)
+        print('time, cost (no compile)',clock.time()-t4)
 
-        # t5 = clock.time()
-        # dJ = var.grad_cost(vector_k)
-        # print('time, gradcost (with compile)',clock.time()-t5)
+        t5 = clock.time()
+        dJ = var.grad_cost(vector_k)
+        print('time, gradcost (with compile)',clock.time()-t5)
 
-        # t6 = clock.time()
-        # dJ = var.grad_cost(vector_k)
-        # print('time, gradcost (no compile)',clock.time()-t6)
+        t6 = clock.time()
+        dJ = var.grad_cost(vector_k)
+        print('time, gradcost (no compile)',clock.time()-t6)
         
         Nl = len(vector_k)//2
         forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
@@ -1163,7 +1166,9 @@ if __name__ == "__main__":
         Ua2 = np.real(Ca)[0]
         
         # for the 2D version, lets find indexes
-        indx,indy = find_indices(point_loc,forcing2D.data.lon.values,forcing2D.data.lat.values,tree=None)[0]
+        #indx,indy = find_indices(point_loc,forcing2D.data.lon.values,forcing2D.data.lat.values,tree=None)[0]
+        indx = nearest(forcing2D.data.lon.values, point_loc[0])
+        indy = nearest(forcing2D.data.lat.values, point_loc[1])
         
         fig, ax = plt.subplots(1,1,figsize = (10,5),constrained_layout=True,dpi=dpi)
         ax.plot(model2.model_time, Ua2, c='b')
