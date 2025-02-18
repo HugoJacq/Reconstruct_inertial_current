@@ -139,6 +139,20 @@ def score_RMSE(U,Ut):
     nt = len(U)
     return np.sqrt( np.sum( (U-Ut)**2 )/ nt )
 
+def score_RMSE_2D(U,Ut):
+    """
+    RMSE between U and true Ut
+    
+    INPUT:
+		- U: 2D array, shape of Ut
+		- Ut: 2D array (time,y,x)
+    OUTPUT:
+		- scalar, RMSE
+    """
+    nt = len(U)
+    timeRMSE = np.sqrt( np.sum( (U-Ut)**2, axis=0 )/ nt, axis=0 )
+    return np.mean(timeRMSE)
+
 def nearest(array,value):
 	"""
 	Array is 1D,

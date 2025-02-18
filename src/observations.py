@@ -27,6 +27,12 @@ class Observation1D:
 class Observation2D:
     """
     Observations of currents fields for 'Unstek1D', 2D (spatial)
+    
+    - period_obs : float(s) time interval between observations 
+    - dt_model : obs comes from OSSE, this is the time step of the OSSE.
+    - path_file : file with OSSE data (regridded)
+    - LON_bounds : LON min and LON max of zone
+    - LAT_bounds : LAT min and LAT max of zone
     """
     def __init__(self, periode_obs, dt_model, path_file, LON_bounds, LAT_bounds):
         
@@ -41,7 +47,11 @@ class Observation2D:
         self.U,self.V = self.data.U.values,self.data.V.values
         self.dt = dt_model
         self.obs_period = periode_obs
-        #self.time_obs = np.arange(0, len(self.data.time)*dt_model,periode_obs)
+        
+        print(len(self.data.time))
+        
+        self.time_obs = np.arange(0, len(self.data.time)*dt_model,periode_obs)
+        print(self.time_obs)
 
     def get_obs(self):
         """

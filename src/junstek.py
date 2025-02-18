@@ -535,7 +535,8 @@ class jUnstek1D_Kt_spatial:
         else:
             raise Exception('K_transform_reverse function '+function+' is not available, retry')
     def kt_ini(self,pk):
-        return jnp.array( [pk]*self.NdT)
+        a_2D = jnp.array( [pk]*self.NdT)
+        return self.kt_2D_to_1D(a_2D)
     def kt_1D_to_2D(self,vector_kt_1D):
         return vector_kt_1D.reshape((self.NdT,self.nl*2))
     def kt_2D_to_1D(self,vector_kt):
@@ -773,11 +774,12 @@ class jUnstek1D_Kt_spatial:
         # https://github.com/leguillf/MASSH/blob/main/mapping/src/tools_4Dvar.py
         # autre possibilité : 
         # https://docs.kidger.site/diffrax/
-        self.Kt = self.kt_2D_to_1D(self.kt_ini(pk))
+        #self.Kt = self.kt_2D_to_1D(pk)
         
         
-        K = self.K_transform(self.Kt) # optimize inverse problem
-        K = K.reshape((self.NdT,self.nl*2))
+        K = self.K_transform(pk) # optimize inverse problem
+        #K = K.reshape((self.NdT,self.nl*2))
+        K = self.kt_1D_to_2D(K)
         if K.shape[-1]//2!=self.nl:
            raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 

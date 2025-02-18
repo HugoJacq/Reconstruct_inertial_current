@@ -73,6 +73,7 @@ LAT_bounds = [30.,35.]
 SOURCE              = 'Croco'   # MITgcm Croco
 TRUE_WIND_STRESS    = True      # whether to use Cd.U**2 or Tau
 dt                  = 60        # timestep of the model (s) 
+dt_OSSE             = 3600      # timestep of the OSSE (s)
 period_obs          = 86400     # s, how many second between observations
 MODE                = '2D'      # '1D' or '1D_kt' or '2D'
 
@@ -102,7 +103,7 @@ PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croc
 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
-TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT       = True     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
 
 BENCHMARK_ALL           = False     # performance benchmark
@@ -1045,7 +1046,7 @@ if __name__ == "__main__":
         Tests of class jUnstek1D_Kt
         """  
         
-        dT = 3*86400 # s
+        dT = 28*86400 # s
         vector_k = jnp.asarray([-11.31980127, -10.28525189])
         #vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
         
@@ -1117,74 +1118,88 @@ if __name__ == "__main__":
             vector_k = jnp.asarray([-11.31980127, -10.28525189])
         if Nl==2:
             vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
- 
+
+        
         print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
         #file = 'Croco_Interp_2D_LON-55.0_-50.0_LAT30.0_35.0.nc'
         file = './data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
         
         forcing2D = Forcing2D(dt_forcing, file, TRUE_WIND_STRESS, LON_bounds, LAT_bounds)
-        observations2D = Observation2D(period_obs, dt, file, LON_bounds, LAT_bounds)
-        print(observations2D.data)
+        observations2D = Observation2D(period_obs, dt_OSSE, file, LON_bounds, LAT_bounds)
         model = jUnstek1D_Kt_spatial(dt, Nl, forcing2D, dT)
         var = Variational(model, observations2D)
 
+        # transform into 1D vector
+        vector_kt = model.kt_ini(vector_k)
+        
+
         t1 = clock.time()
-        _, Ca = model.do_forward_jit(vector_k)
+        _, Ca = model.do_forward_jit(vector_kt)
         print(Ca.shape)
         Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
-        _, Ca = model.do_forward_jit(vector_k)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
-        print('time, forward model (no compile)',clock.time()-t2)
+        # _, Ca = model.do_forward_jit(vector_kt)
+        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        # print('time, forward model (no compile)',clock.time()-t2)
         
-        t3 = clock.time()
-        J = var.cost(vector_k)
-        print('time, cost (with compile)',clock.time()-t3)
+        # t3 = clock.time()
+        # J = var.cost(vector_kt)
+        # print('time, cost (with compile)',clock.time()-t3)
 
-        t4 = clock.time()
-        J = var.cost(vector_k)
-        print('time, cost (no compile)',clock.time()-t4)
+        # t4 = clock.time()
+        # J = var.cost(vector_kt)
+        # print('time, cost (no compile)',clock.time()-t4)
 
-        t5 = clock.time()
-        dJ = var.grad_cost(vector_k)
-        print('time, gradcost (with compile)',clock.time()-t5)
+        # t5 = clock.time()
+        # dJ = var.grad_cost(vector_kt)
+        # print('time, gradcost (with compile)',clock.time()-t5)
 
-        t6 = clock.time()
-        dJ = var.grad_cost(vector_k)
-        print('time, gradcost (no compile)',clock.time()-t6)
+        # t6 = clock.time()
+        # dJ = var.grad_cost(vector_kt)
+        # print('time, gradcost (no compile)',clock.time()-t6)
         
-        Nl = len(vector_k)//2
-        forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
-        model2 = jUnstek1D_Kt(Nl, forcing=forcing1D, dT=dT)
-        var2 = Variational(model, observations)
+        # Compare vs 1D version
+        if False:
+            # before looking at minimizing, I need to check if the model runs ok.
+            # for this I will compare this model to the 1D version, at the same lon/lat location.
+            # for the same vector_k, results should be the same.
+            # results: its ok, not exactly the same but this could be bc
+            #       - I use the regrid product, which interpolate and so introduces some error
+            #       - I compare de 2D at a specific location with the 1D. The 2D model at 'point_loc'
+            #               is only the nearest value (regrid grid is 0.1°)
+            
+            Nl = len(vector_k)//2
+            forcing1D = Forcing1D(dt, path_file, TRUE_WIND_STRESS)
+            model2 = jUnstek1D_Kt(Nl, forcing=forcing1D, dT=dT)
+            var2 = Variational(model, observations)
+            
+            vector_kt = model.kt_ini(vector_k)
+            vector_kt_1D = model.kt_2D_to_1D(vector_kt)
+            _, Ca = model2.do_forward_jit(vector_kt_1D)
+            Ua2 = np.real(Ca)[0]
+            
+            # for the 2D version, lets find indexes
+            #indx,indy = find_indices(point_loc,forcing2D.data.lon.values,forcing2D.data.lat.values,tree=None)[0]
+            indx = nearest(forcing2D.data.lon.values, point_loc[0])
+            indy = nearest(forcing2D.data.lat.values, point_loc[1])
+            
+            fig, ax = plt.subplots(1,1,figsize = (10,5),constrained_layout=True,dpi=dpi)
+            ax.plot(model2.model_time, Ua2, c='b')
+            ax.plot(model.forcing_time[1:], Ua[:-1,indy,indx], c='r',ls='--')
+            ax.plot(forcing.time,U,c='k')
+            
+            print('len(model2.model_time), len(model.forcing_time), len(forcing.time)')
+            print( len(model2.model_time), len(model.forcing_time), len(forcing.time))
+            
+            ax.set_xlabel('time')
+            ax.set_ylabel('U ageo')
+            plt.show()
         
-        vector_kt = model.kt_ini(vector_k)
-        vector_kt_1D = model.kt_2D_to_1D(vector_kt)
-        _, Ca = model2.do_forward_jit(vector_kt_1D)
-        Ua2 = np.real(Ca)[0]
         
-        # for the 2D version, lets find indexes
-        #indx,indy = find_indices(point_loc,forcing2D.data.lon.values,forcing2D.data.lat.values,tree=None)[0]
-        indx = nearest(forcing2D.data.lon.values, point_loc[0])
-        indy = nearest(forcing2D.data.lat.values, point_loc[1])
         
-        fig, ax = plt.subplots(1,1,figsize = (10,5),constrained_layout=True,dpi=dpi)
-        ax.plot(model2.model_time, Ua2, c='b')
-        ax.plot(model.forcing_time[1:], Ua[:-1,indy,indx], c='r',ls='--')
-        ax.plot(forcing.time,U,c='k')
-        
-        print('len(model2.model_time), len(model.forcing_time), len(forcing.time)')
-        print( len(model2.model_time), len(model.forcing_time), len(forcing.time))
-        
-        ax.set_xlabel('time')
-        ax.set_ylabel('U ageo')
-        plt.show()
-        raise Exception
-        # before looking at minimizing, I need to check if the model runs ok.
-        # for this I will compare this model to the 1D version, at the same lon/lat location.
-        # for the same vector_k, results should be the same.
+        # SOME THOUGHTS:
         
         # i need to adapt 'jax_cost' to take into account that U is on a hourly time vector now
         
@@ -1200,25 +1215,34 @@ if __name__ == "__main__":
         
         # explorer les checkpoints de JAX pour ne calculer le gradient qu'aux points où je compare avec les obs
         
-        raise Exception   
-        res = opt.minimize(var.cost, vector_kt_1D, args=(save_iter),
-                        method='L-BFGS-B',
-                        jac=var.grad_cost,
-                        options={'disp': True, 'maxiter': maxiter})
+        # AFTER ALL THE ABOVE: i reduced the forcing dataset to a lower res regrid product and this reduces greatly the cost !
+           
+        # res = opt.minimize(var.cost, vector_kt, args=(save_iter),
+        #                 method='L-BFGS-B',
+        #                 jac=var.grad_cost,
+        #                 options={'disp': True, 'maxiter': 10})
             
-        print_info(var.cost,res)
-        vector_kt_1D = res['x']
-        _, Ca = model.do_forward_jit(vector_kt_1D)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        # print_info(var.cost,res)
+        # vector_kt = res['x']
+        # _, Ca = model.do_forward_jit(vector_kt)
+        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        
+        # select at location
+        indx = nearest(forcing2D.data.lon.values,point_loc[0])
+        indy = nearest(forcing2D.data.lat.values,point_loc[1])
+        Ua = Ua[:,indy,indx]
+        U = forcing2D.data.U[:,indy,indx].values
+        Uo, Vo = observations2D.get_obs()
+        Uo = Uo[:,indy,indx]
         
         RMSE = score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         plt.figure(figsize=(10,3),dpi=dpi)
-        plt.plot(forcing.time/86400,U, c='k', lw=2, label='LLC ref')
-        plt.plot(forcing.time/86400,Ua, c='g', label='Unstek')
-        plt.scatter(observations.time_obs/86400,Uo, c='r', label='obs')
-        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(res['x']),4)))
+        plt.plot(forcing2D.time/86400, U, c='k', lw=2, label='Croco')
+        plt.plot(forcing2D.time/86400, Ua, c='g', label='Unstek')
+        plt.scatter(observations2D.time_obs/86400,Uo, c='r', label='obs')
+        plt.title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
         plt.xlabel('Time (days)')
         plt.ylabel('Ageo zonal current (m/s)')
         plt.legend(loc=1)
@@ -1273,6 +1297,12 @@ if __name__ == "__main__":
     #       model simple 2 couches avec K obtenu par minimization
     #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
     #       model 3D: MLD basé sur gradient de densité
+    
+    
+    # test obs : original vs regrid file at 'point_loc'
+    # merge version of junstek1D_kt and junstek1D_kt_spatial
+    # cleanup junstek1D_kt_spatial
+    
     
     end = clock.time()
     print('Total execution time = '+str(np.round(end-start,2))+' s')
