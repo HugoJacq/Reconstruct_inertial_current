@@ -103,9 +103,9 @@ PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croc
 
 # tests
 TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
-TEST_JUNSTEK1D_KT       = True     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
-REGRID_vs_FINE          = True      # compare at 'point_loc' original and regrid 
+REGRID_vs_FINE          = False      # compare at 'point_loc' original and regrid 
 
 BENCHMARK_ALL           = False     # performance benchmark
 
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     
     # observation and forcing
     path_file = SOURCE+'_Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
-    forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)   
+    forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)  
     observations = Observation1D(period_obs, dt, path_file)
     Uo,Vo = observations.get_obs()
     U, V = forcing.U, forcing.V
@@ -1313,7 +1313,7 @@ if __name__ == "__main__":
         #ax[2].set_ylim([-0.3,0.4])
         
           
-    # TO DO:
+    # SCIENCE TO DOs:
     # - estimation de Uageo : dépendance à la période de filtrage pour estimer Ugeo
     # - Pour le 2 couches : test du point de départ (hypercube) pour trouver un potentiel second minimum
     #       -> le vecteur final est vraiment =/=, mais souvent une des composantes ne bouge pas -> un parametre inutile ?
@@ -1327,7 +1327,7 @@ if __name__ == "__main__":
     #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
     #       model 3D: MLD basé sur gradient de densité
     
-    
+    # TECHNICAL TO DOs
     # test obs : original vs regrid file at 'point_loc'
     #   -> done, its ok. 
     #      note: my 1D interpolation if off, i need to adapt old versions of unstek to use the new regrid file
