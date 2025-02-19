@@ -2,6 +2,21 @@
 
 `python reconstruct_inertial.py`
 
+## Regriding Croco file to rectilinear lat-lon with `regrid_croco.py`
+
+We use surface data from the model Croco (https://www.croco-ocean.org/) on a curvilinear grid at a ~0.02° resolution.
+For practical reasons and also for performance of the inversion process, we move to a rectilinear grid at a resolution of 0.1°.
+To do this, I created a script that:
+1) open Croco file with dask (too big for memory)
+2) move side-located variables (U,V, $\tau_x$, $\tau_y$) to the mass point
+3) computes geostrophic currents from SSH
+4) regrid to rectilinear grid using xesmf
+
+run 
+```
+python regrid_croco.py
+```
+ 
 ## Building GOTM
 Download files in `/home/yourname/GOTM`
 ```
