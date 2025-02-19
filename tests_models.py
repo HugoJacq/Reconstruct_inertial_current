@@ -146,7 +146,7 @@ if __name__ == "__main__":
         """
         print('* Testing junstek1D_Kt_spatial')
         Nl = 2              # number of layers
-        dT = 28*86400       # how much vectork K changes with time, base change to exp
+        dT = 3*86400       # how much vectork K changes with time, base change to exp
         dt_forcing = 3600   # forcing timestep
         dt = 60             # model timestep
         if Nl==1:
@@ -247,6 +247,9 @@ if __name__ == "__main__":
         indy = nearest(forcing2D.data.lat.values,point_loc[1])
         Ua = Ua[:,indy,indx]
         U = forcing2D.data.U[:,indy,indx].values
+        U_shape = forcing2D.data.U.shape
+        every_U = forcing2D.data.U.values.reshape((U_shape[0],U_shape[1]*U_shape[2]))
+        print(every_U.shape)
         Uo, Vo = observations2D.get_obs()
         Uo = Uo[:,indy,indx]
         
@@ -255,6 +258,7 @@ if __name__ == "__main__":
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
         ax.plot(forcing2D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing2D.time/86400, every_U, c='k', lw=2, alpha=0.1)
         ax.plot(forcing2D.time/86400, Ua, c='g', label='Unstek')
         ax.scatter(observations2D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])

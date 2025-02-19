@@ -59,7 +59,7 @@ start = clock.time()
 DASHBOARD   = False     # when using dask
 N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = True      # on HPC
+ON_HPC      = False      # on HPC
 
 # -> area of interest
 # 1D
@@ -102,10 +102,10 @@ CHECK_MINI_HYPERCUBE    = False     # check of minimum, starting at corner of an
 PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croco, at point_loc
 
 # tests
-TEST_ROTARY_SPECTRA     = False     # implementing rotary spectra
-TEST_JUNSTEK1D_KT       = False     # implementing junstek1D_kt
-TEST_JUNSTEK1D_KT_SPATIAL = True   # implementing jUnstek1D_spatial
-REGRID_vs_FINE          = False      # compare at 'point_loc' original and regrid 
+TEST_ROTARY_SPECTRA         = False     # implementing rotary spectra
+TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
+REGRID_vs_FINE              = False     # compare at 'point_loc' original and regrid 
 
 BENCHMARK_ALL           = False     # performance benchmark
 
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     
     # observation and forcing
     path_file = SOURCE+'_Interp_1D_LON'+str(point_loc[0])+'_LAT'+str(point_loc[1])+'.nc'
-    forcing = Forcing1D(dt, path_file, TRUE_WIND_STRESS)  
+    forcing = Forcing1D_SAVE(dt, path_file, TRUE_WIND_STRESS=True)   # to be modified for Forcing1D
     observations = Observation1D(period_obs, dt, path_file)
     Uo,Vo = observations.get_obs()
     U, V = forcing.U, forcing.V
@@ -1270,7 +1270,8 @@ if __name__ == "__main__":
       
     if REGRID_vs_FINE:
         print('* Comparing regrid and original Croco')
-        dsfine, xgrid = open_croco_sfx_file(['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
+        #dsfine, xgrid = open_croco_sfx_file(['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
+        dsfine, xgrid = open_croco_sfx_file(['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
         
         ds1D = xr.open_dataset(path_file)
         dsregridc = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
@@ -1310,6 +1311,7 @@ if __name__ == "__main__":
         ax[2].plot( dsregridb.time, dsregridb.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
         ax[2].legend()
         ax[2].set_ylabel('oceTAUX')
+        fig.savefig('comparison_croco_1Dinterp_regridc_regridb.png')
         #ax[2].set_ylim([-0.3,0.4])
         
           

@@ -412,20 +412,7 @@ class jUnstek1D_Kt:
                             self.__Onelayer,    # if 1 layer, ik=0
                             self.__Nlayer,      # else, loop on layers
                             arg1)   
-           
-        # faire un ouput avec 1 valeur tous les jours.   
-            
-        # old, work but slow (same as no jax version)
-        # performance is comparable to not using __Nlayer because there is a few layers
-        # forward model is on par with no jax (~0.5s) but gradient is much slower (~5s)
-        # for ik in range(self.nl):
-        #     if ((ik==0)&(ik==self.nl-1)): 
-        #         U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]) ) )
-        #     else:
-        #         if ik==0: U = U.at[ik, it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*self.TA[it] - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-        #         elif ik==self.nl-1:  U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*U[ik][it] ) )
-        #         else: U = U.at[ik,it+1].set( U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] -K[2*ik]*(U[ik][it]-U[ik-1][it]) - K[2*ik+1]*(U[ik][it]-U[ik+1][it]) ) )
-        
+                   
         return K, U
 
     def do_forward(self, pk):

@@ -7,9 +7,9 @@ from datetime import timedelta
 import warnings
 from memory_profiler import profile
 
-from filters import *
-from tools import *
-from constants import *
+from .filters import *
+from .tools import *
+from .constants import *
 #from adapt_croco_to_xgcm import *
  
 class Model_source_OSSE:

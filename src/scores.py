@@ -4,7 +4,7 @@ Tool box about measuring score for reconstructed series
 to be used with 'reconstruct_inertial.py'
 """
 import numpy as np
-from tools import *
+from .tools import *
 
 def score_RMSE_component(Ua, Va, Ut, Vt):
     """

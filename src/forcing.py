@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from tools import *
+from .tools import *
 
 class Forcing1D:
     """
