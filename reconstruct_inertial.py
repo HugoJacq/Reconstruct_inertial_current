@@ -1289,7 +1289,7 @@ if __name__ == "__main__":
         fig, ax = plt.subplots(3,1,figsize = (10,7),constrained_layout=True,dpi=dpi)
         ax[0].plot( dsfine.time, dsfine.U.isel(x_u=slice(indxmin,indxmax), 
                                                y_rho=slice(indymin,indymax)).mean(dim=['x_u','y_rho']), label='croco', c='k')
-        ax[0].plot( ds1D.time, ds1D.U,label=' 1D file', c='b')
+        ax[0].plot( ds1D.time, ds1D.U+ds1D.Ug,label=' 1D file', c='b')
         ax[0].plot( dsregridc.time, dsregridc.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
         ax[0].plot( dsregridb.time, dsregridb.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
         ax[0].legend()
