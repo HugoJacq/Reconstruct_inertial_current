@@ -18,14 +18,19 @@ import os
 import sys 
 
 from src.tools import *
+from src.filters import *
+from src.constants import *
 
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
 path_save = './data_regrid/'
 
-#path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
-path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
+path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
+#path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
 
 DASHBOARD = False           # for Dask, turn ON for debug
+N_CPU = 8                   # for //
+
+
 new_dx = 0.1                # °, new resolution
 method = 'conservative'     # conservative or bilinear
 SAVE_FILE = False           # build and save the interpolated file
@@ -73,6 +78,8 @@ if __name__ == "__main__":
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
         
         print('* Interpolation at mass point...')
+        
+        # Croco is grid-C
         L_u = ['U','oceTAUX']
         L_v = ['V','oceTAUY']
         for var in L_u:
@@ -85,21 +92,78 @@ if __name__ == "__main__":
             ds[var].attrs = attrs
         
         # we have variables only at rho points now
+        #   so we rename the coordinates with names
+        #   that xesmf understand
         ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
         ds = ds.set_coords(['lon','lat'])
         
+        # Computing and removing geostrophy
+        # -> large scale filtering of SSH
+        sigmax, sigmay = 3, 3
+        ds['SSH'] = xr.where(ds['SSH']>1e5,np.nan,ds['SSH'])
+        ds['SSH_LS0'] = xr.zeros_like(ds['SSH'])
+        ds['SSH_LS'] = xr.zeros_like(ds['SSH'])
+        
+        print('     2D filter')
+        ds['SSH_LS0'].data = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, len(ds.time), N_CPU, ns=2)
+        
+        print('     time filter')
+        ds['SSH_LS'].data = mytimefilter(ds['SSH_LS0'])  
+        # -> getting geo current from SSH
+        # finite difference, SSH goes from rho -> rho
+        print('     gradXY ssh')
+        # lat, lon are gridded
+        glat2 = ds['lat'].values
+        glon2 = ds['lon'].values
+        # local dlon,dlat
+        dlon = (glon2[:,1:]-glon2[:,:-1]).mean()
+        dlat = (glat2[1:,:]-glat2[:-1,:]).mean()
+        
+        fc = 2*2*np.pi/86164*np.sin(glat2*np.pi/180)
+        gUg = ds['SSH_LS']*0.
+        gVg = ds['SSH_LS']*0.
+        # gradient metrics
+        dx = dlon * xr.ufuncs.cos(xr.ufuncs.deg2rad(glat2)) * distance_1deg_equator 
+        dy = ((glon2 * 0) + 1) * dlat * distance_1deg_equator
+        # over time array
+        for it in range(len(ds.time)):
+            # this could be vectorized ...
+            # centered gradient, dSSH/dx is on SSH point
+            gVg[it,:,1:-1] =  grav/fc[:,1:-1] *( ds['SSH_LS'][it,:,2:].values - ds['SSH_LS'][it,:,:-2].values ) / ( dx[:,1:-1] )/2
+            gUg[it,1:-1,:] = -grav/fc[1:-1,:]*( ds['SSH_LS'][it,2:,:].values  - ds['SSH_LS'][it,:-2,:].values ) / ( dy[1:-1,] )/2
+        gUg[:,0,:] = gUg[:,1,:]
+        gUg[:,-1,:]= gUg[:,-2,:]
+        gVg[:,:,0] = gVg[:,:,1]
+        gVg[:,:,-1]= gVg[:,:,-2]
+        # adding geo current to the file
+        ds['Ug'] = (ds['SSH'].dims,
+                            gUg.data,
+                            {'standard_name':'zonal_geostrophic_current',
+                                'long_name':'zonal geostrophic current from SSH',
+                                'units':'m s-1',})
+        ds['Vg'] = (ds['SSH'].dims,
+                            gVg.data,
+                            {'standard_name':'meridional_geostrophic_current',
+                                'long_name':'meridional geostrophic current from SSH',
+                                'units':'m s-1',}) 
+       
+       # removing geostrophy
+        ds['U'].data = ds['U'].values - ds['Ug'].values
+        ds['V'].data = ds['V'].values - ds['Vg'].values
+        ds['U'].attrs['long_name'] = 'Ageo '+ds['U'].attrs['long_name']
+        ds['V'].attrs['long_name'] = 'Ageo '+ds['V'].attrs['long_name'] 
 
-        ##### WIP
-        if method=='conservative':
-            
+        if method=='conservative':  
+            # we need to compute the boundaries of the lat,lon.
+            # here we are high res so we just remove 1 data point.
+            # see https://earth-env-data-science.github.io/lectures/models/regridding.html
             ds['lon_b'] = xr.DataArray(ds.lon_u.data[1:,:], dims=["y_u", "x_u"]) # coords=[times, locs]
             ds['lat_b'] = xr.DataArray(ds.lat_v.data[:,1:], dims=["y_v", "x_v"])   
             ds = ds.set_coords(['lon_b','lat_b'])
-            #ds['lat_b'] = ds.lat_v
             ds = ds.isel(x_rho=slice(0,-2),y_rho=slice(0,-2))
 
+        # remove unused coordinates
         ds = ds.reset_coords(['lon_v','lat_v','lon_u','lat_u'],drop=True)
-        #####
 
         # mask area where lat and lon == 0.
         lon2D = ds.lon
@@ -114,21 +178,13 @@ if __name__ == "__main__":
         print('     max lat =', latmax)
         ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
         ds['lat'] = xr.where(ds.lat==0.,np.nan,ds.lat)
-        #ds['lon_u'] = xr.where(ds.lon_u==0.,np.nan,ds.lon)
-        #ds['lat_u'] = xr.where(ds.lat_u==0.,np.nan,ds.lat)
-        #ds['lon_v'] = xr.where(ds.lon_v==0.,np.nan,ds.lon)
-        #ds['lat_v'] = xr.where(ds.lat_v==0.,np.nan,ds.lat)
         ds['lon_b'] = xr.where(ds.lon_b==0.,np.nan,ds.lon_b)
         ds['lat_b'] = xr.where(ds.lat_b==0.,np.nan,ds.lat_b)
         ds['mask'] = xr.where(lon2D==0.,0.,1.)
         # new dataset
-        ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)
+        ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)       
+        
         # regridder
-        print(ds)
-        print(ds_out)
-        
-        
-        
         regridder = xe.Regridder(ds, ds_out, method) # bilinear conservative
         
         # regriding variable
@@ -145,6 +201,7 @@ if __name__ == "__main__":
         ds_out['lon1D'] = ds_out.lon[0,:]
         ds_out['lat1D'] = ds_out.lat[:,0]
         ds_out = ds_out.swap_dims({'x':'lon1D','y':'lat1D'})
+        
         # removing unsed dims and coordinates
         ds_out = ds_out.drop_dims(['x_b','y_b'])
         ds_out = ds_out.reset_coords(names=['lon','lat'], drop=True)
@@ -155,6 +212,8 @@ if __name__ == "__main__":
         print(ds)
         print('NEW DATASET')
         print(ds_out)
+
+        raise Exception
 
         ds_out.attrs['xesmf_method'] = method
         ds_out.compute()
