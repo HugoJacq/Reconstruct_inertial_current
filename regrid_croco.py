@@ -24,22 +24,22 @@ from src.constants import *
 filename = 'croco_1h_inst_surf_2006-02-01-2006-02-28'
 path_save = './data_regrid/'
 
-path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
-#path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
+#path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
+path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
 
 DASHBOARD = False           # for Dask, turn ON for debug
-N_CPU = 8                   # for //
+N_CPU = 16                   # for //
 
 
 new_dx = 0.1                # °, new resolution
 method = 'conservative'     # conservative or bilinear
-SAVE_FILE = False           # build and save the interpolated file
+SAVE_FILE = True           # build and save the interpolated file
 
-SHOW_DIFF = False            # show a map with before/after
-CHECK_RESULTS = True        # switch to compute more precise diff
-SHOW_SPACE = True           # if CHECK_RESULTS: show diff along a spatial dimension
-SHOW_TIME = True            # if CHECK_RESULTS: show diff along time
-BILI_VS_CONS = False         # if CHECK_RESULTS: show diff bilinear - conservative
+SHOW_DIFF       = False        # show a map with before/after
+CHECK_RESULTS   = False        # switch to compute more precise diff
+SHOW_SPACE      = False        # if CHECK_RESULTS: show diff along a spatial dimension
+SHOW_TIME       = False        # if CHECK_RESULTS: show diff along time
+BILI_VS_CONS    = False        # if CHECK_RESULTS: show diff bilinear - conservative
 
 
 if __name__ == "__main__": 
@@ -84,11 +84,11 @@ if __name__ == "__main__":
         L_v = ['V','oceTAUY']
         for var in L_u:
             attrs = ds[var].attrs
-            ds[var] = xgrid.interp(ds[var].load(), 'x')
+            ds[var] = xgrid.interp(ds[var], 'x') # .load()
             ds[var].attrs = attrs
         for var in L_v:
             attrs = ds[var].attrs
-            ds[var] = xgrid.interp(ds[var].load(), 'y')
+            ds[var] = xgrid.interp(ds[var], 'y') # .load()
             ds[var].attrs = attrs
         
         # we have variables only at rho points now
@@ -97,31 +97,36 @@ if __name__ == "__main__":
         ds = ds.rename({"lon_rho": "lon", "lat_rho": "lat"})
         ds = ds.set_coords(['lon','lat'])
         
-        # Computing and removing geostrophy
+        # COMPUTING AND REMOVING GEOSTROPHY ---
         # -> large scale filtering of SSH
+        print('* Computing geostrophy ...')
         sigmax, sigmay = 3, 3
         ds['SSH'] = xr.where(ds['SSH']>1e5,np.nan,ds['SSH'])
         ds['SSH_LS0'] = xr.zeros_like(ds['SSH'])
         ds['SSH_LS'] = xr.zeros_like(ds['SSH'])
-        
+        # -> smoothing: spatial
         print('     2D filter')
         ds['SSH_LS0'].data = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, len(ds.time), N_CPU, ns=2)
+        # a warning is raised about JAX being multithreaded but its ok because this function
+        #   is numpy only !
         
+        # -> smoothing: time
         print('     time filter')
-        ds['SSH_LS'].data = mytimefilter(ds['SSH_LS0'])  
+        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'],N_CPU)  
+        
         # -> getting geo current from SSH
-        # finite difference, SSH goes from rho -> rho
         print('     gradXY ssh')
-        # lat, lon are gridded
+        #   lat, lon are gridded
         glat2 = ds['lat'].values
         glon2 = ds['lon'].values
-        # local dlon,dlat
+        #   local dlon,dlat
         dlon = (glon2[:,1:]-glon2[:,:-1]).mean()
         dlat = (glat2[1:,:]-glat2[:-1,:]).mean()
         
         fc = 2*2*np.pi/86164*np.sin(glat2*np.pi/180)
         gUg = ds['SSH_LS']*0.
         gVg = ds['SSH_LS']*0.
+        
         # gradient metrics
         dx = dlon * xr.ufuncs.cos(xr.ufuncs.deg2rad(glat2)) * distance_1deg_equator 
         dy = ((glon2 * 0) + 1) * dlat * distance_1deg_equator
@@ -152,7 +157,9 @@ if __name__ == "__main__":
         ds['V'].data = ds['V'].values - ds['Vg'].values
         ds['U'].attrs['long_name'] = 'Ageo '+ds['U'].attrs['long_name']
         ds['V'].attrs['long_name'] = 'Ageo '+ds['V'].attrs['long_name'] 
-
+        # END COMPUTING GEOSTROPHY ---
+        
+        
         if method=='conservative':  
             # we need to compute the boundaries of the lat,lon.
             # here we are high res so we just remove 1 data point.
@@ -172,6 +179,7 @@ if __name__ == "__main__":
         lonmax = np.round( np.nanmax(np.where(lon2D.values<0.,lon2D.values,np.nan)), 1)
         latmin = np.round( np.nanmin(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
         latmax = np.round( np.nanmax(np.where(lat2D.values>0.,lat2D.values,np.nan)), 1)
+        print('* Area is:')
         print('     min lon =', lonmin)
         print('     max lon =', lonmax)
         print('     min lat =', latmin)
@@ -208,13 +216,14 @@ if __name__ == "__main__":
         ds_out = ds_out.rename({'lon1D':'lon','lat1D':'lat'})
 
         # print some stats
-        print('OLD DATASET')
+        print('\nOLD DATASET\n')
         print(ds)
-        print('NEW DATASET')
+        print('\nNEW DATASET\n')
         print(ds_out)
 
         raise Exception
 
+        print('* Saving ...')
         ds_out.attrs['xesmf_method'] = method
         ds_out.compute()
         ds_out.to_netcdf(path=new_name + '.nc',mode='w')
@@ -299,7 +308,7 @@ if __name__ == "__main__":
             for ik in range(len(search_lon)):
                 LON = search_lon[ik]
                 L_points.append([LON,LAT])
-            L_indices = find_indices_ll(L_points, oldlon, oldlat, N_CPU=15)
+            L_indices = find_indices_ll(L_points, oldlon, oldlat, N_CPU=N_CPU)
             for namevar in list_var:
                 dictvar[namevar] = [ds[namevar][it,indices[0][1],indices[0][0]].values for indices in L_indices] 
             

@@ -1,7 +1,8 @@
 import numpy as np
 from joblib import Parallel, delayed
 import scipy as sp
-
+from tqdm import tqdm
+from .tools import *
 
 def my2dfilter(s,sigmax,sigmay, ns=2):
     """
@@ -29,7 +30,7 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
     return sf
 
-def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2):
+def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2, show_progress=False):
     """
     'my2dfilter' but over each time step and in parallel with Joblib
     """  
@@ -38,9 +39,12 @@ def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2):
         for it in range(nt):
             list_results.append( my2dfilter(s[it,:,:], sigmax, sigmay) )
     else:
-        list_results = Parallel(n_jobs=N_CPU)(delayed(my2dfilter)(s[it,:,:], sigmax, sigmay) for it in range(nt))
-    
-    return np.array(list_results)
+        
+        if show_progress:
+            results = ParallelTqdm(n_jobs=N_CPU)([delayed(my2dfilter)(s[it,:,:], sigmax, sigmay) for it in range(nt)])
+        else:
+            results = Parallel(n_jobs=N_CPU)(delayed(my2dfilter)(s[it,:,:], sigmax, sigmay) for it in range(nt))
+    return np.array(results)
 
 def mytimefilter(Hf0):
     """
@@ -83,7 +87,7 @@ def mytimefilter1D(Hf0):
     Hf = sp.signal.oaconvolve(Hf0[:],gl, mode='same')
     return Hf
 
-def mytimefilter_over_spatialXY(Hf0, N_CPU):
+def mytimefilter_over_spatialXY(Hf0, N_CPU, show_progress=False):
     """
     'mytimefilter1D' but over XY
     
@@ -97,9 +101,15 @@ def mytimefilter_over_spatialXY(Hf0, N_CPU):
             for iy in range(ny):
                 Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix]) 
     else:
+        list_index = [(ix,iy) for ix in range(nx) for iy in range(ny)]
+        if show_progress:
+            results = ParallelTqdm(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index])
+        else:
+            results = Parallel(n_jobs=N_CPU)(delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index)
         
-        results = Parallel(n_jobs=N_CPU)(delayed(mytimefilter1D)(Hf0[:,iy,ix]) for ix in range(nx) for iy in range(ny))
+        
         Hf = np.asarray(results, dtype=float).reshape((nt,ny,nx))
+        
     return Hf
 #
 # ATTEMPT TO USE XARRAY AND BUILD A XR CONVOLUTION
