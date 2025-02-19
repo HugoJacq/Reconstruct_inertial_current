@@ -1,7 +1,6 @@
 import numpy as np
 from joblib import Parallel, delayed
 import scipy as sp
-import xarray as xr
 
 
 def my2dfilter(s,sigmax,sigmay, ns=2):
@@ -64,8 +63,10 @@ def mytimefilter(Hf0):
     # doing the convolution in time
     for ix in range(nx):
         for iy in range(ny):
+            print(ix,iy)
             #Hf[:,iy,ix] = np.convolve(Hf0[:,iy,ix],gl,'same')
-            Hf[:,iy,ix] = sp.signal.oaconvolve(Hf0[:,iy,ix],gl, mode='same')
+            #Hf[:,iy,ix] = sp.signal.oaconvolve(Hf0[:,iy,ix],gl, mode='same')
+            Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix])
     return Hf
 
 def mytimefilter1D(Hf0):
