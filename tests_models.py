@@ -232,15 +232,15 @@ if __name__ == "__main__":
             ax.set_ylabel('U ageo')
             plt.show()
         
-        res = opt.minimize(var.cost, vector_kt,
-                        method='L-BFGS-B',
-                        jac=var.grad_cost,
-                        options={'disp': True, 'maxiter': maxiter})
+        # res = opt.minimize(var.cost, vector_kt,
+        #                 method='L-BFGS-B',
+        #                 jac=var.grad_cost,
+        #                 options={'disp': True, 'maxiter': maxiter})
             
-        print_info(var.cost,res)
-        vector_kt = res['x']
-        _, Ca = model.do_forward_jit(vector_kt)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        # print_info(var.cost,res)
+        # vector_kt = res['x']
+        # _, Ca = model.do_forward_jit(vector_kt)
+        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
         # select at location
         indx = nearest(forcing2D.data.lon.values,point_loc[0])

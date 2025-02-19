@@ -26,7 +26,7 @@ path_save = './data_regrid/'
 #path_in = '/home/jacqhugo/Datlas_2025/DATA_Crocco/'
 path_in = '/data2/nobackup/clement/Data/Lionel_coupled_run/'
 
-DASHBOARD = False           # for Dask, turn ON for debug
+DASHBOARD = True           # for Dask, turn ON for debug
 N_CPU = 16                   # for //
 
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     if DASHBOARD:
         # sometimes dask cluster can cause problems "memoryview is too large"
         # (writing a big netcdf file for eg, hbudget_file)
-        cluster = LocalCluster(n_workers=8) # threads_per_worker=1,
+        cluster = LocalCluster(n_workers=N_CPU) # threads_per_worker=1,
         
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
@@ -73,10 +73,13 @@ if __name__ == "__main__":
             or (SHOW_DIFF and not IS_HERE) 
             or (CHECK_RESULTS and not IS_HERE) ):
 
-        print('* Opening file')
+        print('* Opening file ...')
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
         
-        print('* Interpolation at mass point...')
+        print('* Getting land mask ...')
+        ds['mask_valid'] = xr.where(~(np.isfinite(ds.SSH)),0.,1.).compute()
+        
+        print('* Interpolation at mass point ...')
         
         # Croco is grid-C
         L_u = ['U','oceTAUX']
@@ -106,20 +109,32 @@ if __name__ == "__main__":
         # -> smoothing: spatial
         print('     2D filter')
         ds['SSH_LS0'].data = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, len(ds.time), N_CPU, show_progress=True)
-        # a warning is raised about JAX being multithreaded but its ok because this function
-        #   is numpy only !
+        # a warning is raised about JAX being multithreaded but its ok because this function is numpy only !
 
         # -> smoothing: time
         print('     time filter')
 
         # ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'],N_CPU)  
-        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'].values, N_CPU, show_progress=True)  
+        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'].values, N_CPU=1, show_progress=True)  
+        #ds['SSH_LS'].data = ds['SSH_LS0'].data
+        
+        # mask invalid data
+        ds['SSH_LS0'] = ds['SSH_LS0'].where(ds.mask_valid.data)
+        ds['SSH_LS'] = ds['SSH_LS'].where(ds.mask_valid.data)
+        
+        # fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        # s=ax.pcolormesh(ds.lon,ds.lat,ds['SSH_LS'].isel(time=0),cmap='jet')
+        # plt.colorbar(s,ax=ax)
+        # ax.set_xlabel('lon')
+        # ax.set_ylabel('lat')
+        # ax.set_title('SSH_LS')
+        # plt.show()
         
         # -> getting geo current from SSH
         print('     gradXY ssh')
         #   lat, lon are gridded
-        glat2 = ds['lat'].values
-        glon2 = ds['lon'].values
+        glat2 = ds['lat'].where(ds['lat']!=0).values
+        glon2 = ds['lon'].where(ds['lon']!=0).values
         #   local dlon,dlat
         dlon = (glon2[:,1:]-glon2[:,:-1]).mean()
         dlat = (glat2[1:,:]-glat2[:-1,:]).mean()
@@ -141,6 +156,7 @@ if __name__ == "__main__":
         gUg[:,-1,:]= gUg[:,-2,:]
         gVg[:,:,0] = gVg[:,:,1]
         gVg[:,:,-1]= gVg[:,:,-2]
+        
         # adding geo current to the file
         ds['Ug'] = (ds['SSH'].dims,
                             gUg.data,
@@ -158,6 +174,18 @@ if __name__ == "__main__":
         ds['V'].data = ds['V'].values - ds['Vg'].values
         ds['U'].attrs['long_name'] = 'Ageo '+ds['U'].attrs['long_name']
         ds['V'].attrs['long_name'] = 'Ageo '+ds['V'].attrs['long_name'] 
+        
+        # fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        # s=ax.pcolormesh(ds.lon,ds.lat,ds['Ug'].isel(time=0),cmap='jet')
+        # plt.colorbar(s,ax=ax)
+        # ax.set_xlabel('lon')
+        # ax.set_ylabel('lat')
+        # ax.set_title('Ug')
+        # plt.show()
+        
+        # removing work variables
+        ds = ds.drop_vars(['SSH_LS0','SSH_LS'])
+        #ds = ds.drop_vars(['temp','salt','oceTAUX','oceTAUY','Heat_flx_net','frsh_water_net','SW_rad','MLD'])
         # END COMPUTING GEOSTROPHY ---
         
         
@@ -189,22 +217,26 @@ if __name__ == "__main__":
         ds['lat'] = xr.where(ds.lat==0.,np.nan,ds.lat)
         ds['lon_b'] = xr.where(ds.lon_b==0.,np.nan,ds.lon_b)
         ds['lat_b'] = xr.where(ds.lat_b==0.,np.nan,ds.lat_b)
-        ds['mask'] = xr.where(lon2D==0.,0.,1.)
+        #ds['mask_valid'] = xr.where(lon2D==0.,0.,1.)
+        
+        print('* Regridding ...')
         # new dataset
         ds_out = xe.util.grid_2d(lonmin, lonmax, new_dx, latmin, latmax, new_dx)       
         
         # regridder
+        print('     -> compute once the operator')
         regridder = xe.Regridder(ds, ds_out, method) # bilinear conservative
         
-        # regriding variable
-        print('* Regridding ...')
-        ds_out['mask'] = regridder(ds['mask'])
+        # regriding variables+
+        # some error is raised about arrays not being C-contiguous, please ignore
+        print('     -> apply the operator to variables:')
+        ds_out['mask_valid'] = regridder(ds['mask_valid'])
         for namevar in list(ds.variables):
-            if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask','lon_b','lat_b']:
+            if namevar not in ['lat', 'lon', 'lat_u', 'lon_u', 'lat_v', 'lon_v', 'time','mask_valid','lon_b','lat_b']:
                 print('     '+namevar)
                 ds_out[namevar] = regridder(ds[namevar])
                 # masking
-                ds_out[namevar] = ds_out[namevar].where(ds_out['mask'])
+                ds_out[namevar] = ds_out[namevar].where(ds_out['mask_valid'])
         
         # replacing x and y with lon1D and lat1D
         ds_out['lon1D'] = ds_out.lon[0,:]
@@ -221,8 +253,6 @@ if __name__ == "__main__":
         print(ds)
         print('\nNEW DATASET\n')
         print(ds_out)
-
-        raise Exception
 
         print('* Saving ...')
         ds_out.attrs['xesmf_method'] = method

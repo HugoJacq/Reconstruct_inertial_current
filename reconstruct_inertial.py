@@ -56,10 +56,10 @@ start = clock.time()
 # PARAMETERS                                  #
 ###############################################
 # //
-DASHBOARD   = False     # when using dask
+DASHBOARD   = True     # when using dask
 N_CPU       = 8         # when using joblib, if >1 then use // code
 JAXIFY      = True      # whether to use JAX or not
-ON_HPC      = False      # on HPC
+ON_HPC      = True      # on HPC
 
 # -> area of interest
 # 1D
@@ -105,7 +105,7 @@ PLOT_CROCO_PROFILES     = False      # WIP: plot the vertical profiles from croc
 TEST_ROTARY_SPECTRA         = False     # implementing rotary spectra
 TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
-REGRID_vs_FINE              = False     # compare at 'point_loc' original and regrid 
+REGRID_vs_FINE              = True     # compare at 'point_loc' original and regrid 
 
 BENCHMARK_ALL           = False     # performance benchmark
 
@@ -1270,12 +1270,12 @@ if __name__ == "__main__":
       
     if REGRID_vs_FINE:
         print('* Comparing regrid and original Croco')
-        #dsfine, xgrid = open_croco_sfx_file(['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
-        dsfine, xgrid = open_croco_sfx_file(['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
+        dsfine, xgrid = open_croco_sfx_file(['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
+        #dsfine, xgrid = open_croco_sfx_file(['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'])
         
         ds1D = xr.open_dataset(path_file)
         dsregridc = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
-        dsregridb = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc')
+        #dsregridb = xr.open_dataset('./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc')
         
         indices = find_indices_gridded_latlon(dsfine.lon_rho.values, 
                                               [point_loc[0]-0.1,point_loc[0]+0.1], 
@@ -1290,8 +1290,8 @@ if __name__ == "__main__":
         ax[0].plot( dsfine.time, dsfine.U.isel(x_u=slice(indxmin,indxmax), 
                                                y_rho=slice(indymin,indymax)).mean(dim=['x_u','y_rho']), label='croco', c='k')
         ax[0].plot( ds1D.time, ds1D.U+ds1D.Ug,label=' 1D file', c='b')
-        ax[0].plot( dsregridc.time, dsregridc.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
-        ax[0].plot( dsregridb.time, dsregridb.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        ax[0].plot( dsregridc.time, (dsregridc.U+dsregridc.Ug).sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
+        #ax[0].plot( dsregridb.time, dsregridb.U.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
         ax[0].legend()
         ax[0].set_ylabel('U')
         ax[0].set_ylim([-0.3,0.4])
@@ -1300,7 +1300,7 @@ if __name__ == "__main__":
                                                y_rho=slice(indymin,indymax)).mean(dim=['x_rho','y_rho']), label='croco', c='k')
         ax[1].plot( ds1D.time, ds1D.SSH,label=' 1D file', c='b')
         ax[1].plot( dsregridc.time, dsregridc.SSH.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
-        ax[1].plot( dsregridb.time, dsregridb.SSH.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        #ax[1].plot( dsregridb.time, dsregridb.SSH.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
         ax[1].legend()
         ax[1].set_ylabel('SSH')
         
@@ -1308,7 +1308,7 @@ if __name__ == "__main__":
                                                y_rho=slice(indymin,indymax)).mean(dim=['x_u','y_rho']), label='croco', c='k')
         ax[2].plot( ds1D.time, ds1D.oceTAUX,label=' 1D file', c='b')
         ax[2].plot( dsregridc.time, dsregridc.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridc', c='g')
-        ax[2].plot( dsregridb.time, dsregridb.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
+        #ax[2].plot( dsregridb.time, dsregridb.oceTAUX.sel(lon=point_loc[0],lat=point_loc[1], method='nearest'), label='regridb', c='orange')
         ax[2].legend()
         ax[2].set_ylabel('oceTAUX')
         fig.savefig('comparison_croco_1Dinterp_regridc_regridb.png')

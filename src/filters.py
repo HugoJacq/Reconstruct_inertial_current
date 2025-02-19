@@ -1,7 +1,6 @@
 import numpy as np
 from joblib import Parallel, delayed
 import scipy as sp
-from tqdm import tqdm
 from .tools import *
 
 def my2dfilter(s,sigmax,sigmay, ns=2):
@@ -30,13 +29,16 @@ def my2dfilter(s,sigmax,sigmay, ns=2):
     sf[w_sum!=0] = s_sum[w_sum!=0] / w_sum[w_sum!=0]
     return sf
 
-def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU, ns=2, show_progress=False):
+def my2dfilter_over_time(s,sigmax,sigmay, nt, N_CPU=1, ns=2, show_progress=False):
     """
     'my2dfilter' but over each time step and in parallel with Joblib
+    
+    # to do: wrap this with xarray ufunc to keep attrs/dims/coords
     """  
     if N_CPU==1:
         list_results = []
         for it in range(nt):
+            print(it,'/',nt)
             list_results.append( my2dfilter(s[it,:,:], sigmax, sigmay) )
     else:
         
@@ -78,7 +80,8 @@ def mytimefilter1D(Hf0):
     Smoothing filter on 1D array
     input is dt=1h
     """
-    time_conv = np.arange(-1*86400,1*86400+3600,3600) # 1D array, time boundaries for kernel (in sec)
+    dt = 3600
+    time_conv = np.arange(-1*86400,1*86400+dt,dt) # 1D array, time boundaries for kernel (in sec)
     # time kernel for convolution
     taul = 2*86400
     gl = np.exp(-taul**-2 * time_conv**2) 
@@ -87,21 +90,38 @@ def mytimefilter1D(Hf0):
     Hf = sp.signal.oaconvolve(Hf0[:],gl, mode='same')
     return Hf
 
-def mytimefilter_over_spatialXY(Hf0, N_CPU, show_progress=False):
+def mytimefilter_over_spatialXY(Hf0, N_CPU=1, show_progress=False):
     """
     'mytimefilter1D' but over XY
     
-    Hf0 of the form (t,y,x), dt=1h
+    Hf0 of the form (t,y,x), 
+    dt=1h, if not 1h, you need to change in mytimefilter1D
+    
+    # to do: wrap this with xarray ufunc to keep attrs/dims/coords
     """
     Hf = Hf0*0. # initialization
     nt, ny, nx = np.shape(Hf0) # shape of array
-     
+    
+    
+    list_index = [(ix,iy) for ix in range(nx) for iy in range(ny)]
     if N_CPU<=1:
-        for ix in range(nx):
-            for iy in range(ny):
-                Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix]) 
+        if show_progress:
+            for ind in tqdm.tqdm(list_index):
+                Hf[:,ind[1],ind[0]] = mytimefilter1D(Hf0[:,ind[1],ind[0]])
+        else:
+            for ix in range(nx):
+                for iy in range(ny):
+                    Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix]) 
+        
     else:
-        list_index = [(ix,iy) for ix in range(nx) for iy in range(ny)]
+        raise Exception('// mytimefilter_over_spatialXY is bugged, exiting')
+        # To expand a bit on this:
+        #   when i use the parallel version (see undernearth) of the double for loop 
+        #   I get strange lines with unphysical values like 10e10 for SSH.
+        #   
+        # In the end it is not very important as the full North Atlantic Croco sim
+        # is like 1400 * 1900, it takes around 20min to apply this filter !
+    
         if show_progress:
             results = ParallelTqdm(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index])
         else:

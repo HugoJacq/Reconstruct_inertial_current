@@ -10,8 +10,8 @@ import xarray as xr
 from xgcm import Grid as xGrid
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
-import tqdm
 from joblib import Parallel
+import tqdm
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.
