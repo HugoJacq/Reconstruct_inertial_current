@@ -9,6 +9,16 @@ import jax.numpy as jnp
 from jax import jit,grad, lax, jvp, vjp
 from functools import partial
 
+from .constants import FORCE_CPU
+
+# for jax
+cpu_device = jax.devices('cpu')[0]
+try:
+    gpu_device = jax.devices('gpu')[0]
+except:
+    gpu_device = cpu_device
+if FORCE_CPU:
+    jax.config.update('jax_platform_name', 'cpu')
 
 class jUnstek1D:
     """

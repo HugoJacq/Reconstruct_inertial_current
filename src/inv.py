@@ -15,6 +15,17 @@ import jaxopt
 
 from constants import *
 
+# for jax
+cpu_device = jax.devices('cpu')[0]
+try:
+    gpu_device = jax.devices('gpu')[0]
+except:
+    gpu_device = cpu_device
+if FORCE_CPU:
+    jax.config.update('jax_platform_name', 'cpu')
+    
+    
+
 def value_and_grad_jvp(f):   
     return lambda x: ( f(x), jax.jacfwd(f)(x) )
     #return lambda x:  jnp.diagonal( jax.jvp(f, (x,), (jnp.ones(( len(x),len(x) )), ) ) )

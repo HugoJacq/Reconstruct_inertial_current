@@ -14,8 +14,7 @@ import xesmf as xe
 from dask.distributed import Client,LocalCluster
 import time as clock
 import pathlib
-import os
-import sys 
+
 
 from src.tools import *
 from src.filters import *
@@ -106,13 +105,15 @@ if __name__ == "__main__":
         ds['SSH_LS'] = xr.zeros_like(ds['SSH'])
         # -> smoothing: spatial
         print('     2D filter')
-        ds['SSH_LS0'].data = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, len(ds.time), N_CPU, ns=2)
+        ds['SSH_LS0'].data = my2dfilter_over_time(ds['SSH'].values,sigmax,sigmay, len(ds.time), N_CPU, show_progress=True)
         # a warning is raised about JAX being multithreaded but its ok because this function
         #   is numpy only !
-        
+
         # -> smoothing: time
         print('     time filter')
-        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'],N_CPU)  
+
+        # ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'],N_CPU)  
+        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'].values, N_CPU, show_progress=True)  
         
         # -> getting geo current from SSH
         print('     gradXY ssh')

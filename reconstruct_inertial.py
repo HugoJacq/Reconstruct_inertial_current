@@ -1329,10 +1329,13 @@ if __name__ == "__main__":
     #       model simple 100 couches avec K obtenu par Croco 3D (/3h, à interpoler sur grille fixe)
     #       model 3D: MLD basé sur gradient de densité
     
+    # HIGH PRORITY: Compare the model at the PAPA station !!
+    
     # TECHNICAL TO DOs
     # test obs : original vs regrid file at 'point_loc'
     #   -> done, its ok. 
     #      note: my 1D interpolation if off, i need to adapt old versions of unstek to use the new regrid file
+    #           -> no its not off, i forgot geostrophy, now its ok !
     # merge version of junstek1D_kt and junstek1D_kt_spatial : diff in implementation
     # cleanup junstek1D_kt_spatial
     # use the regrid product even for 1D cases
