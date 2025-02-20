@@ -114,7 +114,7 @@ def mytimefilter_over_spatialXY(Hf0, N_CPU=1, show_progress=False):
                     Hf[:,iy,ix] = mytimefilter1D(Hf0[:,iy,ix]) 
         
     else:
-        raise Exception('// mytimefilter_over_spatialXY is bugged, exiting')
+        #raise Exception('// mytimefilter_over_spatialXY is bugged, exiting')
         # To expand a bit on this:
         #   when i use the parallel version (see undernearth) of the double for loop 
         #   I get strange lines with unphysical values like 10e10 for SSH.
@@ -123,7 +123,13 @@ def mytimefilter_over_spatialXY(Hf0, N_CPU=1, show_progress=False):
         # is like 1400 * 1900, it takes around 20min to apply this filter !
     
         if show_progress:
-            results = ParallelTqdm(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index])
+            #results = ParallelTqdm(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index])
+            results = []
+            # for ix in tqdm.tqdm(range(nx)):
+            #     results.append( Parallel(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,iy,ix]) for iy in range(ny)]) )
+            for iy in tqdm.tqdm(range(ny)):
+                results.append( Parallel(n_jobs=N_CPU)([delayed(mytimefilter1D)(Hf0[:,iy,ix]) for ix in range(nx)]) )
+            
         else:
             results = Parallel(n_jobs=N_CPU)(delayed(mytimefilter1D)(Hf0[:,ind[1],ind[0]]) for ind in list_index)
         

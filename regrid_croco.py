@@ -79,7 +79,16 @@ if __name__ == "__main__":
         print('* Getting land mask ...')
         ds['mask_valid'] = xr.where(~(np.isfinite(ds.SSH)),0.,1.).compute()
         
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(ds['mask_valid'].isel(time=0),cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('lon')
+        ax.set_ylabel('lat')
+        ax.set_title('mask_valid')
+        plt.show()
+        
         print('* Interpolation at mass point ...')
+        
         
         # Croco is grid-C
         L_u = ['U','oceTAUX']
@@ -92,6 +101,7 @@ if __name__ == "__main__":
             attrs = ds[var].attrs
             ds[var] = xgrid.interp(ds[var], 'y') # .load()
             ds[var].attrs = attrs
+        
         
         # we have variables only at rho points now
         #   so we rename the coordinates with names
@@ -115,30 +125,40 @@ if __name__ == "__main__":
         print('     time filter')
 
         # ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'],N_CPU)  
-        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'].values, N_CPU=1, show_progress=True)  
+        ds['SSH_LS'].data = mytimefilter_over_spatialXY(ds['SSH_LS0'].values, N_CPU=N_CPU, show_progress=True)  
         #ds['SSH_LS'].data = ds['SSH_LS0'].data
         
         # mask invalid data
         ds['SSH_LS0'] = ds['SSH_LS0'].where(ds.mask_valid.data)
         ds['SSH_LS'] = ds['SSH_LS'].where(ds.mask_valid.data)
         
-        # fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
-        # s=ax.pcolormesh(ds.lon,ds.lat,ds['SSH_LS'].isel(time=0),cmap='jet')
-        # plt.colorbar(s,ax=ax)
-        # ax.set_xlabel('lon')
-        # ax.set_ylabel('lat')
-        # ax.set_title('SSH_LS')
-        # plt.show()
+        
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(ds['SSH_LS'],cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_title('SSH_LS')
+        plt.show()
         
         # -> getting geo current from SSH
         print('     gradXY ssh')
         #   lat, lon are gridded
-        glat2 = ds['lat'].where(ds['lat']!=0).values
-        glon2 = ds['lon'].where(ds['lon']!=0).values
+        glat2 = ds['lat'].where(ds['mask_valid']).values
+        glon2 = ds['lon'].where(ds['mask_valid']).values
+        
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(glat2,cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_title('glat2')
+        plt.show()
+        
         #   local dlon,dlat
         dlon = (glon2[:,1:]-glon2[:,:-1]).mean()
         dlat = (glat2[1:,:]-glat2[:-1,:]).mean()
-        
+        print(dlon,dlat)
         fc = 2*2*np.pi/86164*np.sin(glat2*np.pi/180)
         gUg = ds['SSH_LS']*0.
         gVg = ds['SSH_LS']*0.
@@ -169,11 +189,41 @@ if __name__ == "__main__":
                                 'long_name':'meridional geostrophic current from SSH',
                                 'units':'m s-1',}) 
        
+        print(ds.Ug)
+        print(ds.Ug.values)
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(ds.lon,ds.lat,ds['Ug'].isel(time=0),cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('lon')
+        ax.set_ylabel('lat')
+        ax.set_title('Ug')
+        plt.show()
+       
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(ds.lon,ds.lat,ds['U'].isel(time=0),cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('lon')
+        ax.set_ylabel('lat')
+        ax.set_title('U')
+        plt.show()
+       
+       
        # removing geostrophy
         ds['U'].data = ds['U'].values - ds['Ug'].values
         ds['V'].data = ds['V'].values - ds['Vg'].values
         ds['U'].attrs['long_name'] = 'Ageo '+ds['U'].attrs['long_name']
         ds['V'].attrs['long_name'] = 'Ageo '+ds['V'].attrs['long_name'] 
+        
+        print(ds.U)
+        print(ds.U.values)
+        
+        fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
+        s=ax.pcolormesh(ds.lon,ds.lat,ds['U'].isel(time=0),cmap='jet')
+        plt.colorbar(s,ax=ax)
+        ax.set_xlabel('lon')
+        ax.set_ylabel('lat')
+        ax.set_title('U')
+        plt.show()
         
         # fig, ax = plt.subplots(1,1,figsize = (10,5), constrained_layout=True,dpi=200)
         # s=ax.pcolormesh(ds.lon,ds.lat,ds['Ug'].isel(time=0),cmap='jet')
@@ -213,10 +263,10 @@ if __name__ == "__main__":
         print('     max lon =', lonmax)
         print('     min lat =', latmin)
         print('     max lat =', latmax)
-        ds['lon'] = xr.where(ds.lon==0.,np.nan,ds.lon)
-        ds['lat'] = xr.where(ds.lat==0.,np.nan,ds.lat)
-        ds['lon_b'] = xr.where(ds.lon_b==0.,np.nan,ds.lon_b)
-        ds['lat_b'] = xr.where(ds.lat_b==0.,np.nan,ds.lat_b)
+        ds['lon'] = xr.where(ds['mask_valid'])#ds.lon==0.,np.nan,ds.lon)
+        ds['lat'] = xr.where(ds['mask_valid'])#ds.lat==0.,np.nan,ds.lat)
+        ds['lon_b'] = xr.where(ds['mask_valid'])#ds.lon_b==0.,np.nan,ds.lon_b)
+        ds['lat_b'] = xr.where(ds['mask_valid'])#ds.lat_b==0.,np.nan,ds.lat_b)
         #ds['mask_valid'] = xr.where(lon2D==0.,0.,1.)
         
         print('* Regridding ...')
@@ -238,6 +288,10 @@ if __name__ == "__main__":
                 # masking
                 ds_out[namevar] = ds_out[namevar].where(ds_out['mask_valid'])
         
+        print(ds_out.U)
+        print(ds_out.U.values)
+        
+        
         # replacing x and y with lon1D and lat1D
         ds_out['lon1D'] = ds_out.lon[0,:]
         ds_out['lat1D'] = ds_out.lat[:,0]
@@ -254,6 +308,12 @@ if __name__ == "__main__":
         print('\nNEW DATASET\n')
         print(ds_out)
 
+        print(ds.U)
+        print(ds.U.values)
+
+        print(ds_out.U)
+        print(ds_out.U.values)
+        raise Exception
         print('* Saving ...')
         ds_out.attrs['xesmf_method'] = method
         ds_out.compute()

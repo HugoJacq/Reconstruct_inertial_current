@@ -253,3 +253,4 @@ JAX_test_junstek1D_kt_spatial_2layers.png
 comparison_croco_1Dinterp_regridc_regridb.png
 data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.ncSAVE
 data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.ncSAVE
+data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.ncBUG
