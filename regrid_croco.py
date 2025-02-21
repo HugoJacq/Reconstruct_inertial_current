@@ -31,7 +31,7 @@ N_CPU = 8                   # for //
 
 
 new_dx = 0.1                # °, new resolution
-method = 'conservative'     # conservative or bilinear
+method = 'conservative'     # conservative (long but more accurate) or bilinear (fast)
 SAVE_FILE = False           # build and save the interpolated file
 
 SHOW_DIFF       = False        # show a map with before/after
@@ -366,11 +366,6 @@ if __name__ == "__main__":
         ds, xgrid = open_croco_sfx_file(path_in+filename+'.nc', lazy=True, chunks={'time':100})
         ds_i = xr.open_dataset(new_name+'.nc')
         time = ds_i.time
-        #print(ds_i)
-        # SST, SSH, H
-        
-        
-        
         
         # new grid
         indy_n = nearest(ds_i.lat.values,LAT)
@@ -415,7 +410,7 @@ if __name__ == "__main__":
             fig, ax = plt.subplots(len(list_var),1,figsize = (len(list_var)*5,5),constrained_layout=True,dpi=200) 
             for k, namevar in enumerate(list_var):
                 ax[k].plot(time, ds[namevar][:,indy,indx],c='k',label='truth')
-                ax[k].scatter(time, ds_i[namevar][:,indy_n,indx_n],c='b',label='interp',marker='x')
+                #ax[k].scatter(time, ds_i[namevar][:,indy_n,indx_n],c='b',label='interp',marker='x')
                 if namevar in ['U','V']:
                     ax[k].scatter(time, (ds_i[namevar]+ds_i[namevar+'g'])[:,indy_n,indx_n],c='b',label='interp',marker='x')
                 else:
@@ -427,10 +422,6 @@ if __name__ == "__main__":
         if BILI_VS_CONS:
             dsc = xr.open_mfdataset(path_save+'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
             dsb = xr.open_mfdataset(path_save+'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.nc')
-            
-            print(dsc)
-            print(dsb)
-            
             
             for k, namevar in enumerate(list_var):
                 fig, ax = plt.subplots(1,1,figsize = (len(list_var)*5,5),constrained_layout=True,dpi=200) 
