@@ -59,6 +59,8 @@ ON_HPC      = True      # on HPC
 # 1D
 point_loc_source = {'Croco':[-50.,35.]}
 # 2D
+# LON_bounds = [-52.5,-47.5]
+# LAT_bounds = [32.5,37.5]
 LON_bounds = [-50.2,-49.8]
 LAT_bounds = [34.8,35.2]
 
@@ -73,8 +75,8 @@ maxiter                 = 100       # max iteration of minimization
 
 # tests
 TEST_JUNSTEK1D              = False     # TBD
-TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
-TEST_JUNSTEK1D_KT_SPATIAL   = True     # implementing jUnstek1D_spatial
+TEST_JUNSTEK1D_KT           = True     # implementing junstek1D_kt
+TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
 
 # regrid data
 path_regrid = './data_regrid/'
@@ -82,16 +84,16 @@ name_regrid = 'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
 
 # -> List of files (from Croco)
 # Jackzilla
-if ON_HPC:
-    files_dict = {'Croco':{'surface':[#'/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc',
-                                    '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'],
-                            '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
-                                '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},}
-# Local
-else:
-    files_dict = {'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
-                            '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
-                                '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},}    
+# if ON_HPC:
+#     files_dict = {'Croco':{'surface':[#'/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-01-01-2006-01-31.nc',
+#                                     '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_1h_inst_surf_2006-02-01-2006-02-28.nc'],
+#                             '3D':['/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
+#                                 '/data2/nobackup/clement/Data/Lionel_coupled_run/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},}
+# # Local
+# else:
+#     files_dict = {'Croco':{'surface':'/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_1h_inst_surf_2006-02-01-2006-02-28.nc',
+#                             '3D':['/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_U_aver_2006-02-01-2006-02-28.nc',
+#                                 '/home/jacqhugo/Datlas_2025/DATA_Crocco/croco_3h_V_aver_2006-02-01-2006-02-28.nc']},}    
 
 # -> PLOT
 dpi=200
@@ -132,8 +134,85 @@ if __name__ == "__main__":
     if TEST_JUNSTEK1D_KT:
         """
         """
-        print('* Testing junstek1D_Kt')
-        print('TBD')    
+        Nl = 2              # number of layers
+        dT = 3*86400       # how much vectork K changes with time, base change to exp
+        dt_forcing = 3600   # forcing timestep
+        dt = 60             # model timestep
+        MINIMIZE = True     # switch to do the minisation process
+        if Nl==1:
+            vector_k = jnp.asarray([-11.31980127, -10.28525189])
+        if Nl==2:
+            vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
+
+        
+        print('* test jUnstek1D_Kt_v2, N='+str(Nl)+' layers')
+        file = path_regrid+name_regrid #'./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
+        
+        forcing1D = Forcing1D(point_loc, dt_OSSE, file)
+        observations1D = Observation1D(point_loc, period_obs, dt_OSSE, file)
+        model = jUnstek1D_Kt_v2(dt, Nl, forcing1D, dT)
+        var = Variational(model, observations1D)    
+        
+        # transform into 1D vector
+        vector_kt = model.kt_ini(vector_k)
+        print('vector_kt',vector_kt)
+        
+        t1 = clock.time()
+        _, Ca = model.do_forward_jit(vector_kt)
+
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        t2 = clock.time()
+        print('time, forward model (with compile)',t2-t1)
+        
+        _, Ca = model.do_forward_jit(vector_kt)
+        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        print('time, forward model (no compile)',clock.time()-t2)
+        
+        t3 = clock.time()
+        J = var.cost(vector_kt)
+        print('time, cost (with compile)',clock.time()-t3)
+
+        t4 = clock.time()
+        J = var.cost(vector_kt)
+        print('time, cost (no compile)',clock.time()-t4)
+
+        t5 = clock.time()
+        dJ = var.grad_cost(vector_kt)
+        print('time, gradcost (with compile)',clock.time()-t5)
+
+        t6 = clock.time()
+        dJ = var.grad_cost(vector_kt)
+        print('time, gradcost (no compile)',clock.time()-t6)
+    
+        if MINIMIZE:
+            print('-> minimizing ...')
+            res = opt.minimize(var.cost, vector_kt,
+                            method='L-BFGS-B',
+                            jac=var.grad_cost,
+                            options={'disp': True, 'maxiter': maxiter})
+                
+            print_info(var.cost,res)
+            vector_kt = res['x']
+            _, Ca = model.do_forward_jit(vector_kt)
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+    
+        # PLOT
+        U = forcing1D.data.U.values
+        Uo, Vo = observations1D.get_obs()
+        
+        RMSE = score_RMSE(Ua, U) 
+        print('RMSE is',RMSE)
+        # PLOT trajectory
+        fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
+        ax.plot(forcing1D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing1D.time/86400, Ua, c='g', label='Unstek')
+        ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
+        ax.set_ylim([-0.3,0.4])
+        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Ageo zonal current (m/s)')
+        ax.legend(loc=1)
+        fig.savefig(path_save_png+'JAX_test_junstek1D_kt_v2_'+str(Nl)+'layers.png')
     
     if TEST_JUNSTEK1D_KT_SPATIAL:
         """    
@@ -144,19 +223,19 @@ if __name__ == "__main__":
             location, we cant match the performance of a 1D model at the same 
             locatione.
         """
-        print('* Testing junstek1D_Kt_spatial')
         Nl = 2              # number of layers
         dT = 3*86400       # how much vectork K changes with time, base change to exp
         dt_forcing = 3600   # forcing timestep
         dt = 60             # model timestep
+        MINIMIZE = True     # switch to do the minisation process
         if Nl==1:
             vector_k = jnp.asarray([-11.31980127, -10.28525189])
         if Nl==2:
             vector_k = jnp.asarray([-10.76035344, -9.3901326, -10.61707124, -12.66052074])
 
         
-        print('* test jUnstek1D_Kt_spatial '+str(Nl)+' layers')
-        file = './data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
+        print('* test jUnstek1D_Kt_spatial, N='+str(Nl)+' layers')
+        file = path_regrid+name_regrid #'./data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
         
         forcing2D = Forcing2D(dt_forcing, file, LON_bounds, LAT_bounds)
         observations2D = Observation2D(period_obs, dt_OSSE, file, LON_bounds, LAT_bounds)
@@ -232,15 +311,17 @@ if __name__ == "__main__":
             ax.set_ylabel('U ageo')
             plt.show()
         
-        # res = opt.minimize(var.cost, vector_kt,
-        #                 method='L-BFGS-B',
-        #                 jac=var.grad_cost,
-        #                 options={'disp': True, 'maxiter': maxiter})
-            
-        # print_info(var.cost,res)
-        # vector_kt = res['x']
-        # _, Ca = model.do_forward_jit(vector_kt)
-        # Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        if MINIMIZE:
+            print('-> minimizing ...')
+            res = opt.minimize(var.cost, vector_kt,
+                            method='L-BFGS-B',
+                            jac=var.grad_cost,
+                            options={'disp': True, 'maxiter': maxiter})
+                
+            print_info(var.cost,res)
+            vector_kt = res['x']
+            _, Ca = model.do_forward_jit(vector_kt)
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
         
         # select at location
         indx = nearest(forcing2D.data.lon.values,point_loc[0])

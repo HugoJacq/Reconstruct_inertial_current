@@ -7,14 +7,18 @@ class Forcing1D:
     """
     Forcing fields for 'Unstek1D'
     
+    point_loc   : [LON,LAT] location of the experiment
     dt_forcing  : time step of forcing
     path_file   : path to regrided dataset with forcing fields (stress) 
-    point_loc   : [LON,LAT] location of the experiment
     """
-    def __init__(self, dt_forcing, path_file, point_loc, TRUE_WIND_STRESS):
+    def __init__(self, point_loc, dt_forcing, path_file):
         
         # from dataset
-        self.data = xr.open_dataset(path_file)
+        ds = xr.open_dataset(path_file)
+        indx = nearest(ds.lon.values,point_loc[0])
+        indy = nearest(ds.lat.values,point_loc[1])
+        self.data = ds.isel(lon=indx,lat=indy)
+        
         self.U,self.V,self.MLD = self.data.U.values,self.data.V.values,self.data.MLD
         # if 'TAx' in self.data.keys():
         #     self.bulkTx,self.bulkTy = self.data.TAx.values,self.data.TAy.values
@@ -39,6 +43,8 @@ class Forcing1D:
 class Forcing1D_SAVE:
     """
     Forcing fields for 'Unstek1D'
+    
+    path_file points to a hand made 1D (temporal) serie of current, wind stress extracted from a coupled model
     """
     def __init__(self, dt, path_file, TRUE_WIND_STRESS):
         
