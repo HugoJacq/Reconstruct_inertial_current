@@ -12,6 +12,8 @@ from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 from joblib import Parallel
 import tqdm
+from dask.callbacks import Callback
+
 
 def PSD(time_vect, signal_vect):
     """This function automates the computation of the Power Spectral Density of a signal.
@@ -581,3 +583,4 @@ class ParallelTqdm(Parallel):
             self.progress_bar.refresh()
         # update progressbar
         self.progress_bar.update(self.n_completed_tasks - self.progress_bar.n)
+        
