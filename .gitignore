@@ -256,3 +256,8 @@ data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_bilinear.ncSAVE
 data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.ncBUG
 png_tests_models/JAX_test_junstek1D_kt_v2_1layers.png
 png_tests_models/JAX_test_junstek1D_kt_v2_2layers.png
+png_tests_models/JAX_test_junstek1D_kt_spatial_2layers-50.0E_35.0N_R0.2_obs1h.png
+png_tests_models/JAX_test_junstek1D_kt_spatial_2layers-50.0E_35.0N_R2.5_obs1day.png
+png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N_obs1day.png
+png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N_obs1h.png
+png_tests_models/JAX_test_junstek1D_v2_2layers-50.0E_35.0N.png
