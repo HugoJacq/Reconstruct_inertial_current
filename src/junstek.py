@@ -1,3 +1,19 @@
+"""
+This modules gather the definition of classical models used in the litterature 
+to reconstruct inertial current from wind stress
+Each model needs a forcing, from the module 'forcing.py'
+
+The models are written in JAX to allow for automatic differentiation
+
+refs:
+Wang et al. 2023: https://www.mdpi.com/2072-4292/15/18/4526
+Stokes et al. 2024: https://journals.ametsoc.org/view/journals/phoc/54/3/JPO-D-23-0167.1.xml
+Pollard 1970: https://linkinghub.elsevier.com/retrieve/pii/0011747170900422
+Price et al. 1986 (PWP model): https://doi.org/10.1029/JC091iC07p08411
+
+By: Hugo Jacquet fev 2025
+"""
+
 import numpy as np
 import xarray as xr
 import warnings
@@ -23,8 +39,23 @@ if FORCE_CPU:
 class jUnstek1D:
     """
     JAX version, Unsteady Ekman Model 1D, with N layers 
+       
+                dU/dt = -ifU + dtau/dz  with tau(z) = K(z)dU/dz
     
-    See : https://doi.org/10.3390/rs15184526
+    +> 1 layer:
+                dU/dt = -ifU + (tau_0 - Kz.U1/H)/H
+        
+        minimized form is:
+                dU/dt = -ifU + K0.tau_0 - K1.U1
+        
+        
+    -> 2 layers:
+        i=1     dU1/dt = -i.f.U1 + (tau_0 - Kz.(U1-U2)/(0.5(H1+H2))/H1
+        i=2     dU2/dt = -i.f.U2 + (Kz.(U2-U1)/(0.5(H1+H2) - Kz.(U2)/H2)/H2
+
+        minimized form is:
+                dU1/dt = -i.f.U1 + K0.tau_0 - K1.(U1-U2)
+                dU2/dt = -i.f.U2 + K2.(U2-U1) - K3.U2        
     """
     def __init__(self, Nl, forcing, observations):
         # from dataset
@@ -218,7 +249,7 @@ class jUnstek1D:
 class jUnstek1D_Kt:
     """
     Unsteady Ekman Model 1D, with N layers 
-    Vector K change with slowly with time.
+    Same as 'jUnstek1D' but parameter vector K change slowly with time.
     
     Written in JAX formalism.
     """
@@ -584,7 +615,7 @@ class jUnstek1D_Kt_spatial:
             X - - - - * - - - - * - - - - * - - - - * X  # 6 values
         """
         step = self.dT//self.dt
-        Nstep = self.ntm//step
+        Nstep = len(gtime)//step
         gptime = jnp.zeros( self.ntm//step+1 )        
         for ipt in range(Nstep):
             gptime = gptime.at[ipt].set( gtime[ipt*step] )
@@ -609,7 +640,7 @@ class jUnstek1D_Kt_spatial:
         """
         it, K, TA, U = arg2
         ik = 0
-        U = U.at[ik,:,:].set( U[ik,:,:] + self.dt*( -1j*self.fc*U[ik,:,:] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik,:,:]) ) )
+        U = U.at[ik,:,:].set( U[ik,:,:] + self.dt*( -1j*self.fc*U[ik,:,:] +K[2*ik]*TA - K[2*ik+1]*(U[ik,:,:]) ) )
         return it, K, TA, U
         
     def __Nlayer_midlayers_for_scan(self,X0,ik):
@@ -617,8 +648,8 @@ class jUnstek1D_Kt_spatial:
         U = U.at[ik,:,:].set( U[ik,:,:] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik,:,:] 
-                                    - K[it,2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
-                                    - K[it,2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
+                                    - K[2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
+                                    - K[2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
         X = it, K, U
         return X, X
         
@@ -634,15 +665,15 @@ class jUnstek1D_Kt_spatial:
         U = U.at[ik,:,:].set( U[ik,:,:] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik,:,:] 
-                                    + K[it,2*ik]*TA 
-                                    - K[it,2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
+                                    + K[2*ik]*TA 
+                                    - K[2*ik+1]*(U[ik,:,:]-U[ik+1,:,:]) ) )
         # bottom
         ik = -1
         U = U.at[ik,:,:].set(  U[ik,:,:] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik,:,:] 
-                                    - K[it,2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
-                                    - K[it,2*ik+1]*U[ik,:,:] ) )
+                                    - K[2*ik]*(U[ik,:,:]-U[ik-1,:,:]) 
+                                    - K[2*ik+1]*U[ik,:,:] ) )
         # in between
         X0 = it, K, U
         final, _ = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
@@ -677,8 +708,9 @@ class jUnstek1D_Kt_spatial:
         #it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
         itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
         TA = (1-aa)*self.TA[it,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
+        Ktnow = (1-aa)*Kt[it] + aa*Kt[itsup]
         
-        arg2 = itm, Kt, TA, U
+        arg2 = itm, Ktnow, TA, U
         # loop on layers
         _, _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
                             self.__Onelayer,    # if 1 layer, ik=0
@@ -765,7 +797,7 @@ class jUnstek1D_Kt_spatial:
            raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 
         #gtime = jnp.asarray(self.forcing_time)
-        M = self.pkt2Kt_matrix(gtime=self.model_time)
+        M = self.pkt2Kt_matrix(gtime=self.forcing_time)
         Kt = jnp.dot(M,K)  
         
         with warnings.catch_warnings():
@@ -788,7 +820,7 @@ class jUnstek1D_Kt_spatial:
 class jUnstek1D_Kt_v2:
     """
     Unsteady Ekman Model 1D, with N layers 
-    Vector K changes slowly with time.
+    Same as 'jUnstek1D' but parameter vector K change slowly with time.
     
     Written in JAX formalism.
     """
@@ -903,7 +935,7 @@ class jUnstek1D_Kt_v2:
             X - - - - * - - - - * - - - - * - - - - * X  # 6 values
         """
         step = self.dT//self.dt
-        Nstep = self.ntm//step
+        Nstep = len(gtime)//step
         gptime = jnp.zeros( self.ntm//step+1 )        
         for ipt in range(Nstep):
             gptime = gptime.at[ipt].set( gtime[ipt*step] )
@@ -928,7 +960,7 @@ class jUnstek1D_Kt_v2:
         """
         it, K, TA, U = arg2
         ik = 0
-        U = U.at[ik].set( U[ik] + self.dt*( -1j*self.fc*U[ik] +K[it,2*ik]*TA - K[it,2*ik+1]*(U[ik]) ) )
+        U = U.at[ik].set( U[ik] + self.dt*( -1j*self.fc*U[ik] +K[2*ik]*TA - K[2*ik+1]*(U[ik]) ) )
         return it, K, TA, U
         
     def __Nlayer_midlayers_for_scan(self,X0,ik):
@@ -936,8 +968,8 @@ class jUnstek1D_Kt_v2:
         U = U.at[ik].set( U[ik] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik] 
-                                    - K[it,2*ik]*(U[ik]-U[ik-1]) 
-                                    - K[it,2*ik+1]*(U[ik]-U[ik+1]) ) )
+                                    - K[2*ik]*(U[ik]-U[ik-1]) 
+                                    - K[2*ik+1]*(U[ik]-U[ik+1]) ) )
         X = it, K, U
         return X, X
         
@@ -953,15 +985,15 @@ class jUnstek1D_Kt_v2:
         U = U.at[ik].set( U[ik] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik] 
-                                    + K[it,2*ik]*TA 
-                                    - K[it,2*ik+1]*(U[ik]-U[ik+1]) ) )
+                                    + K[2*ik]*TA 
+                                    - K[2*ik+1]*(U[ik]-U[ik+1]) ) )
         # bottom
         ik = -1
         U = U.at[ik].set(  U[ik] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik] 
-                                    - K[it,2*ik]*(U[ik]-U[ik-1]) 
-                                    - K[it,2*ik+1]*U[ik] ) )
+                                    - K[2*ik]*(U[ik]-U[ik-1]) 
+                                    - K[2*ik+1]*U[ik] ) )
         # in between
         X0 = it, K, U
         final, _ = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
@@ -996,8 +1028,9 @@ class jUnstek1D_Kt_v2:
         #it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
         itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
         TA = (1-aa)*self.TA[it] + aa*self.TA[itsup] # TA is stress at current model time step
+        Ktnow = (1-aa)*Kt[it] + aa*Kt[itsup]
         
-        arg2 = itm, Kt, TA, U
+        arg2 = itm, Ktnow, TA, U
         # loop on layers
         _, _, _, U = lax.cond( self.nl == 1,       # condition, only 1 layer ?
                             self.__Onelayer,    # if 1 layer, ik=0
@@ -1084,7 +1117,7 @@ class jUnstek1D_Kt_v2:
            raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, len(pk)//2,pk))
 
         #gtime = jnp.asarray(self.forcing_time)
-        M = self.pkt2Kt_matrix(gtime=self.model_time)
+        M = self.pkt2Kt_matrix(gtime=self.forcing_time)
         Kt = jnp.dot(M,K)  
         
         with warnings.catch_warnings():
@@ -1106,17 +1139,30 @@ class jUnstek1D_Kt_v2:
 
 class jUnstek1D_v2:
     """
-    Unsteady Ekman Model 1D, with N layers 
-    Vector K is fixed in time
+    JAX version, Unsteady Ekman Model 1D, with N layers 
+       
+                dU/dt = -ifU + dtau/dz  with tau(z) = K(z)dU/dz
     
-    Written in JAX formalism.
+    +> 1 layer:
+                dU/dt = -ifU + (tau_0 - Kz.U1/H)/H
+        
+        minimized form is:
+                dU/dt = -ifU + K0.tau_0 - K1.U1
+        
+        
+    -> 2 layers:
+        i=1     dU1/dt = -i.f.U1 + (tau_0 - Kz.(U1-U2)/(0.5(H1+H2))/H1
+        i=2     dU2/dt = -i.f.U2 + (Kz.(U2-U1)/(0.5(H1+H2) - Kz.(U2)/H2)/H2
+
+        minimized form is:
+                dU1/dt = -i.f.U1 + K0.tau_0 - K1.(U1-U2)
+                dU2/dt = -i.f.U2 + K2.(U2-U1) - K3.U2        
     """
     def __init__(self, dt, Nl, forcing):
         """
         dt : model time step
         Nl : number of layers
-        forcing : class Forcing2D (on a different timestep)
-        dT : seconds, period of change of K in time
+        forcing : class Forcing1D (on a different timestep)
         """
         # from dataset
         self.nt = len(forcing.time)

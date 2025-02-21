@@ -261,3 +261,8 @@ png_tests_models/JAX_test_junstek1D_kt_spatial_2layers-50.0E_35.0N_R2.5_obs1day.
 png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N_obs1day.png
 png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N_obs1h.png
 png_tests_models/JAX_test_junstek1D_v2_2layers-50.0E_35.0N.png
+png_tests_models/JAX_test_classic_slab1D_1layers-50.0E_35.0N.png
+png_tests_models/JAX_test_classic_slab1D_2layers-50.0E_35.0N.png
+png_tests_models/JAX_test_junstek1D_kt_spatial_2layers-50.0E_35.0N_R5.png
+png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N.png
+src/__pycache__/classic_NIO_models.cpython-310.pyc
