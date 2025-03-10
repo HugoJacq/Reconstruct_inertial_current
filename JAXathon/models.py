@@ -43,6 +43,7 @@ class Unstek1D:
         self.nl = Nl
         self.isJax = False
       
+      
     def K_transform(self, pk, order=0, function='exp'):
         """
         Transform the K vector to improve minimization process
@@ -82,8 +83,16 @@ class Unstek1D:
             itsup = -1
         else:
             itsup = itf+1
+            
+        #print("it, itf",it,itf)
         TA = (1-aa)*self.TA[itf] + aa*self.TA[itsup]
-
+        
+        if it==60:
+            print("it, itf",it,itf)
+            print("TA",TA)
+            #print("fc",self.fc)
+            print("aa",aa)
+            
         for ik in range(self.nl):
             if ((ik==0)&(ik==self.nl-1)): 
                 U[ik,it+1] = U[ik][it] + self.dt*( -1j*self.fc*U[ik][it] +K[2*ik]*TA - K[2*ik+1]*(U[ik][it]) )
@@ -114,7 +123,7 @@ class Unstek1D:
         arg0 = pk, U
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
-            for it in range(self.nt-1):
+            for it in range(0,self.nt-1):
                 _, U = self.step(it, arg0)
                 
         self.Ur_traj = U
@@ -251,6 +260,8 @@ class Unstek1D:
 
         return np.real(ad_k)
 
+
+
 class jUnstek1D:
     """
     JAX version, Unsteady Ekman Model 1D, with N layers 
@@ -282,8 +293,7 @@ class jUnstek1D:
         self.nt = len(forcing.time)
         self.dt_forcing = forcing.dt_forcing
         self.dt = int(dt)
-        self.ntm = forcing.time[-1]//dt
-        self.ntf = forcing.time[-1]//dt
+        self.ntm = int(len(forcing.time) * self.dt_forcing / self.dt) # forcing.time[-1]//dt
         self.forcing_time = forcing.time
         self.model_time = jnp.arange(0,self.ntm*self.dt,self.dt)
         # forcing
@@ -295,10 +305,7 @@ class jUnstek1D:
         
         # JIT compiled functions
         self.do_forward_jit = jit(self.do_forward)
-        self.K_transform_jit = jit(self.K_transform)
-        self.__one_step_jit = jit(self.__one_step)
-    
-    
+        #self.do_forward_jit = self.do_forward
     
     
     def K_transform(self, pk, order=0, function='exp'):
@@ -329,19 +336,19 @@ class jUnstek1D:
         """
         1 time iteration of unstek model when 1 layer
         """
-        it, K, TA, U = arg2
+        K, TA, U = arg2
         ik = 0
         U = U.at[ik].set( U[ik] + self.dt*( -1j*self.fc*U[ik] +K[2*ik]*TA - K[2*ik+1]*(U[ik]) ) )
-        return it, K, TA, U
+        return K, TA, U
         
     def __Nlayer_midlayers_for_scan(self,X0,ik):
-        it, K, U = X0
+        K, U = X0
         U = U.at[ik].set( U[ik] + 
                                 self.dt*( 
                                     - 1j*self.fc*U[ik] 
                                     - K[2*ik]*(U[ik]-U[ik-1]) 
                                     - K[2*ik+1]*(U[ik]-U[ik+1]) ) )
-        X = it, K, U
+        X = K, U
         return X, X
         
     def __Nlayer(self,arg2):
@@ -349,7 +356,7 @@ class jUnstek1D:
         1 time iteration of unstek model when N layer
         """        
         
-        it, K, TA,  U = arg2
+        K, TA,  U = arg2
         
         # surface
         ik = 0
@@ -366,10 +373,10 @@ class jUnstek1D:
                                     - K[2*ik]*(U[ik]-U[ik-1]) 
                                     - K[2*ik+1]*U[ik] ) )
         # in between
-        X0 = it, K, U
+        X0 = K, U
         final, _ = lax.scan(self.__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
-        _, _, U = final
-        return it, K, TA, U    
+        _, U = final
+        return K, TA, U    
     
     def __one_step(self, X0, inner_t):
         """
@@ -386,16 +393,29 @@ class jUnstek1D:
         """
         it, K, U = X0
         nsubsteps = self.dt_forcing // self.dt
-        itm = it*nsubsteps + inner_t
+        itm = it*nsubsteps + inner_t # + 1 # here the +1 is due to Python starting at 0
         
         # on-the-fly (linear) interpolation of forcing
         aa = jnp.mod(itm,nsubsteps)/nsubsteps
         itsup = lax.select(it+1>=self.nt, -1, it+1) 
         TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
         
-        arg2 = itm, K, TA, U
+        
+        def print_jax():
+            jax.debug.print('itm = {}',itm)
+            jax.debug.print('itf = {}',it)
+            jax.debug.print('TA = {}',TA)
+            #jax.debug.print('fc = {}',self.fc)
+            jax.debug.print('aa = {}',aa)
+            return None
+        def print_none():
+            return None
+        lax.cond(itm==60,print_jax,print_none)
+
+            
+        arg2 = K, TA, U
         # loop on layers
-        _, _, _, U = lax.cond( self.nl == 1,    # condition, only 1 layer ?
+        _, _, U = lax.cond( self.nl == 1,    # condition, only 1 layer ?
                             self.__Onelayer,    # if 1 layer, ik=0
                             self.__Nlayer,      # else, loop on layers
                             arg2)   
@@ -408,13 +428,23 @@ class jUnstek1D:
         outer loop (forcing time step, 1 hour)
         """
         K, U = arg0
-        Uold = lax.select( it>0, U[:,it-1], U[:,0])
-        
+        #Uold = lax.select( it>0, U[:,it-1], U[:,0])
+        Uold = U[:,it]
         X0 = it, K, Uold
         final, _ = lax.scan(self.__one_step, X0, jnp.arange(0, self.dt_forcing//self.dt))
         _, _, Unext = final
-        U = U.at[:,it].set(Unext)
+        U = U.at[:,it+1].set(Unext)
 
+        return K, U
+
+    def __step2(self,itm,arg0):
+        K, U = arg0
+        Uold = U[:,itm]
+        it = itm // (self.dt_forcing//self.dt)
+        X0 = it, K, Uold
+        final, _ = self.__one_step(X0, itm)
+        _, _, Unext = final
+        U = U.at[:,itm+1].set(Unext)
         return K, U
     
     def __step_for_scan(self, X0, it):
@@ -423,6 +453,14 @@ class jUnstek1D:
         """
         arg0 = X0
         X0 = self.__step(it, arg0)
+        return X0, X0
+
+    def __step2_for_scan(self, X0, it):
+        """
+        outer loop (forcing time step, 1 hour)
+        """
+        arg0 = X0
+        X0 = self.__step2(it, arg0)
         return X0, X0
     
     def do_forward(self, pk):
@@ -441,9 +479,9 @@ class jUnstek1D:
             - The use of 'lax.fori_loop' on layer loop has close execution time with not using it, 
                 because there is only a few layers
         
-        TBD : add option to save at every dt
         """ 
         U = jnp.zeros( (self.nl, self.nt), dtype='complex')
+        #U = jnp.zeros( (self.nl, self.ntm), dtype='complex')
         
         K = self.K_transform(pk) # optimize inverse problem
         if K.shape[-1]//2!=self.nl:
@@ -451,13 +489,11 @@ class jUnstek1D:
         
         with warnings.catch_warnings():
             warnings.simplefilter('ignore') # dont show overflow results
-            # lax.fori_loop
-            # arg0 = Kt, U
-            # _, U = lax.fori_loop(0, self.nt, self.__step, arg0)
             
             # lax.scan version
             X0 = K, U
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt-1))
+            #final, _ = lax.scan(self.__step2_for_scan, X0, jnp.arange(0,self.ntm-1))
             _, U = final
             
         self.Ur_traj = U

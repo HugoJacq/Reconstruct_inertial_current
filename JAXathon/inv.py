@@ -109,6 +109,8 @@ class Variational:
         B = jnp.zeros( self.Uo.shape, dtype='float64')
         A = A.at[:].set(U[::self.obs_period//self.dt_forcing])
         B = B.at[:].set(V[::self.obs_period//self.dt_forcing])
+        #A = A.at[:].set(U[::self.obs_period//self.model_dt])
+        #B = B.at[:].set(V[::self.obs_period//self.model_dt])
         J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
         return J 
  

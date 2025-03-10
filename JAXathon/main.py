@@ -19,9 +19,8 @@ from tools import *
 ###############################################
 # PARAMETERS                                  #
 ###############################################
-# //
-N_CPU       = 8         # when using joblib, if >1 then use // code
-JAXIFY      = False      # whether to use JAX or not
+
+JAXIFY      = False       # whether to use JAX or not
 
 # Model definition
 Nl                  = 2         # number of layers
@@ -39,7 +38,8 @@ maxiter             = 100       # max number of iteration
 
 
 # What do you want to do ?
-MINIMIZE                = True     # start a minimisation process
+ONE_FORWARD             = True      # one time the forward model
+MINIMIZE                = False     # start a minimisation process
 TIME_FORWARD_BACKWARD   = False     # measure the time for forward/backward of model
 
 # regrid data
@@ -58,13 +58,13 @@ if __name__ == "__main__":
     point_loc = [-50.,35.]
     
     # How I built the data file
-    ds = xr.open_mfdataset('../data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
-    ix = nearest(ds.lon.values,point_loc[0])
-    iy = nearest(ds.lat.values,point_loc[1])
-    print(ix,iy)
-    ds = ds.isel(lat=slice(iy-1,iy+2),lon=slice(ix-1,ix+2))
-    ds.to_netcdf(path_regrid)
-    raise Exception
+    # ds = xr.open_mfdataset('../data_regrid/croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc')
+    # ix = nearest(ds.lon.values,point_loc[0])
+    # iy = nearest(ds.lat.values,point_loc[1])
+    # print(ix,iy)
+    # ds = ds.isel(lat=slice(iy-1,iy+2),lon=slice(ix-1,ix+2))
+    # ds.to_netcdf(path_regrid)
+    # raise Exception
 
     # Initialisation of parameter vector
     if Nl==1:
@@ -74,7 +74,9 @@ if __name__ == "__main__":
     else:
         vector_k = np.linspace(-12,-4,Nl*2)        
     
-    print('\nNumber of layers Nl =',Nl)
+    print('\n')
+    print('JAX : '+str(JAXIFY))
+    print('Number of layers Nl =',Nl)
     print('Initial vector_k is:\n'+str(vector_k)+'\n')
     
     # Initialisation of model, forcing, obs and 4Dvar
@@ -87,6 +89,37 @@ if __name__ == "__main__":
         model = Unstek1D(dt, Nl, forcing1D, observations1D)
     var = Variational(model, observations1D)  
     
+    if ONE_FORWARD:
+        print('* Testing forward model')
+        if JAXIFY:
+            _, Ca = model.do_forward_jit(vector_k)
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            #Ua, Va = Ua[::forcing1D.dt_forcing//model.dt], Va[::forcing1D.dt_forcing//model.dt]
+        else:
+            _, Ca = model.do_forward(vector_k)
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = Ua[::forcing1D.dt_forcing//model.dt], Va[::forcing1D.dt_forcing//model.dt]
+        
+        # PLOT
+        U = forcing1D.data.U.values
+        Uo, Vo = observations1D.get_obs()
+        print(U.shape,Ua.shape)
+        print(Ua[0])
+        RMSE = score_RMSE(Ua, U) 
+        
+        # PLOT trajectory
+        fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
+        ax.plot(forcing1D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing1D.time/86400, Ua, c='g', label='Unstek')
+        ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
+        ax.set_ylim([-0.3,0.4])
+        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_k),4)))
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Ageo zonal current (m/s)')
+        ax.legend(loc=1)
+        fig.savefig(path_save_png+'forward_test_'+type(model).__name__+'_'+str(Nl)+'layers.png')
+        
+        
     
     if TIME_FORWARD_BACKWARD:
         print('* Time deltas for running the model (Nl='+str(Nl)+')')
@@ -146,14 +179,19 @@ if __name__ == "__main__":
         vector_k = res['x']
         if JAXIFY:
             _, Ca = model.do_forward_jit(vector_k)
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            #Ua, Va = Ua[::forcing1D.dt_forcing//model.dt], Va[::forcing1D.dt_forcing//model.dt]
         else:
             _, Ca = model.do_forward(vector_k)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = Ua[::forcing1D.dt_forcing//model.dt], Va[::forcing1D.dt_forcing//model.dt]
+        
     
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
-        
+        print(U.shape,Ua.shape)
+        print(Ua[0])
         RMSE = score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
@@ -167,3 +205,6 @@ if __name__ == "__main__":
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
         fig.savefig(path_save_png+'minimization_test_'+type(model).__name__+'_'+str(Nl)+'layers.png')
+        
+    plt.show()
+    
