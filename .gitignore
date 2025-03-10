@@ -268,3 +268,9 @@ png_tests_models/JAX_test_junstek1D_kt_v2_2layers-50.0E_35.0N.png
 src/__pycache__/classic_NIO_models.cpython-310.pyc
 png_tests_models/JAX_test_classic_slab1D_Kt_2layers-50.0E_35.0N.png
 png_tests_models/JAX_test_junstek1D_kt_spatial_2layers-50.0E_35.0N_R0.2.png
+JAXathon/croco_1h_inst_surf_2006-02-01-2006-02-28_conservative_-50.0_-35.0.nc
+JAXathon/__pycache__/forcing.cpython-310.pyc
+JAXathon/__pycache__/inv.cpython-310.pyc
+JAXathon/__pycache__/models.cpython-310.pyc
+JAXathon/__pycache__/observation.cpython-310.pyc
+JAXathon/__pycache__/tools.cpython-310.pyc

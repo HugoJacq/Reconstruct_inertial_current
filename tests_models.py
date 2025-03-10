@@ -76,7 +76,6 @@ period_obs          = 86400      # s, how many second between observations #864
 Nl                  = 2         # number of layers
 dT                  = 3*86400   # how much vectork K changes with time, base change to exp
 dt_forcing          = 3600      # forcing timestep
-dt                  = 60        # model timestep
     
 # MINIMIZATION
 MINIMIZE            = True      # switch to do the minimisation process
@@ -126,7 +125,6 @@ if __name__ == "__main__":
         # sometimes dask cluster can cause problems "memoryview is too large"
         # (writing a big netcdf file for eg, hbudget_file)
         cluster = LocalCluster(n_workers=8) # threads_per_worker=1,
-        
         client = Client(cluster)
         print("Dashboard at :",client.dashboard_link)
     
