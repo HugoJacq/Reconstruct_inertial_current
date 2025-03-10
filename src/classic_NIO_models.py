@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax import jit,grad, lax, jvp, vjp
+from jax import jit, lax
 from functools import partial
 
 from .constants import FORCE_CPU
