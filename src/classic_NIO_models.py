@@ -23,6 +23,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax import jit, lax
 from functools import partial
+import equinox as eqx
 
 from .constants import FORCE_CPU
 
@@ -240,7 +241,7 @@ class classic_slab1D:
             warnings.simplefilter('ignore') # dont show overflow results
             # lax.scan version
             X0 = K, U
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt)) #
             _, U = final
             
         self.Ur_traj = U
@@ -543,5 +544,209 @@ class classic_slab1D_Kt:
         
         return pk, U
     
+
+class classic_slab1D_eqx(eqx.Module):
+    """
+     Originaly from Pollard (1970), implemented as:
+                dU/dt = -ifU + dtau/dz -rU 
+            
+        1 layer (= "slab model")
+                dU/dt = -ifU + Tau_0/H - rU    
+            
+            parameters = (H,r)
+            minimized version:
+                dU/dt = -ifU + K0.Tau_0 - K1.U
+    """
+    # variables
+    U0 : np.float64
+    V0 : np.float64
+    # control vector
+    pk : jnp.array
+    # parameters
+    TAx : jnp.array
+    TAy : jnp.array
+    fc : jnp.array
+    dt_forcing : np.float64
+    nl : np.int32
+    
+    @eqx.filter_jit
+    def __call__(self, t0, t1, dt, SaveAt = None):
+        
+        # time saved
+        # if type(SaveAt)==list:
+        #     if len(SaveAt)>=0:
+        #         ns = len(SaveAt)
+        # elif type(SaveAt)==np.float64 or type(SaveAt)==np.int32:
+        if SaveAt is None:
+            ns = np.int32((t1-t0)//self.dt_forcing)
+        else:
+            ns = np.int32((t1-t0)//SaveAt)
+        
+     
+        # initialization
+        U = jnp.zeros( (self.nl, ns), dtype='complex') + (self.U0+1j*self.V0)
+        
+        #U = U 
+        time_forcing = jnp.arange(t0,t1,self.dt_forcing)
+        data_forcing = jnp.asarray(self.TAx+1j*self.TAy, dtype='complex')
+        # initialize interpolation function
+        TA_t = lambda t: self.my_interpolate(t, time_forcing, data_forcing)
+        
+        # optimization transform of control parameters
+        K = self.K_transform( self.pk )
+        
+        # warning on K size
+        should_be_size = self.nl + (self.nl-1) +1   # number of Hi, number of tau_i, r
+        actual_size = K.shape[-1]
+        if actual_size!=should_be_size:
+           raise Exception('Your model is {} layers, but you want to run it with {} layers (k={})'.format(self.nl, actual_size//2, self.pk))
+
+        
+        # defining loop functions  
+        def __Onelayer(arg2):
+            """
+            1 time iteration of unstek model when 1 layer
+            """
+            
+            it, K, TA, U = arg2
+            ik = 0
+            U = U.at[ik].set( U[ik] + dt*( 
+                                            -1j*self.fc*U[ik] 
+                                            + K[ik]*TA 
+                                            - K[-1]*U[ik] ) )
+            return it, K, TA, U
+            
+        def __Nlayer_midlayers_for_scan(X0,ik): 
+            it, K, U = X0
+            U = U.at[ik].set( U[ik] + 
+                                    dt*( 
+                                        - 1j*self.fc*U[ik] 
+                                        - K[ik+1]*(K[ik-1]-K[ik])
+                                        - K[-1]*U[ik] ) )
+            X = it, K, U
+            return X, X
+            
+        def __Nlayer(arg2):
+            """
+            1 time iteration of unstek model when N layer
+            """    
+
+            it, K, TA,  U = arg2
+            
+            # surface
+            ik = 0
+            U = U.at[ik].set( U[ik] + 
+                                    dt*( 
+                                        - 1j*self.fc*U[ik] 
+                                        + K[ik]*(TA-K[ik+1])
+                                        - K[-1]*U[ik] ) )
+            # bottom
+            ik = -1
+            U = U.at[ik].set(  U[ik] + 
+                                    dt*( 
+                                        - 1j*self.fc*U[ik] 
+                                        + K[ik-1]*K[ik-2]
+                                        - K[-1]*U[ik] ) )
+            # in between
+            X0 = it, K, U
+            final, _ = lax.scan(__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
+            _, _, U = final
+            return it, K, TA, U    
+        
+        def __one_step(X0, inner_t):
+            """
+            1 model time step forward (inner loop)
+            
+            INPUT:
+            - itm: current model time step
+            - arg0 it, K, U at current model time step
+                it: forcing time index
+                K : K vector
+                U: velocity 
+            OUTPUT:
+            - U: updated velocity at next time step 
+            """
+            it, K, U = X0
+            nsubsteps = self.dt_forcing // dt
+            itm = it*nsubsteps + inner_t
+            
+            # on-the-fly (linear) interpolation of forcing
+            # aa = jnp.mod(itm,nsubsteps)/nsubsteps
+            # itsup = lax.select(it+1>=self.nt, -1, it+1) 
+            # TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
+            current_time = itm*dt
+            TA = TA_t(current_time)
+            # jax.debug.print('current time = {}',current_time)
+            arg2 = itm, K, TA, U
+            # loop on layers
+            _, _, _, U = lax.cond( self.nl == 1,    # condition, only 1 layer ?
+                                __Onelayer,         # if 1 layer, ik=0
+                                __Nlayer,           # else, loop on layers
+                                arg2)   
+            X0 = it, K, U        
+            return X0, X0
+     
+        @eqx.debug.assert_max_traces(max_traces=1)
+        def __step(it, arg0):
+            """
+            outer loop (forcing time step, 1 hour)
+            """
+            K, U = arg0
+            Uold = lax.select( it>0, U[:,it-1], U[:,0])
+            
+            X0 = it, K, Uold
+            final, _ = lax.scan(__one_step, X0, jnp.arange(0, self.dt_forcing//dt))
+            _, _, Unext = final
+            U = U.at[:,it].set(Unext)
+
+            return K, U
+    
+        # time loop
+        arg0 = K, U
+        #U = lax.scan(self.__step_for_scan, X0, length=ns) #jnp.arange(0,ns))      
+        _, U = lax.fori_loop(0, ns, __step, arg0)
+        
+        
+        return U
     
     
+    
+    
+    
+    
+    def my_interpolate(self, t, time_array, data_array):
+        # Custom efficient interpolation 
+        idx = jnp.searchsorted(time_array, t) - 1
+        idx = jnp.clip(idx, 0, len(time_array) - 2)
+        t0, t1 = time_array[idx], time_array[idx + 1]
+        y0, y1 = data_array[idx], data_array[idx + 1]
+        alpha = (t - t0) / (t1 - t0)
+        return y0 + alpha * (y1 - y0)
+    
+    def K_transform(self, pk, order=0, function='exp'):
+        """
+        Transform the K vector to improve minimization process
+        
+        INPUT:
+            - pk : K vector
+            - order : 1 is derivative
+            - function : string of the name of the function
+        OUTPUT:
+            - f(k) or f'(k)
+        """  
+        if function=='exp':
+            return jnp.exp(pk)
+        elif function=='id':
+            return pk
+        else:
+            raise Exception('K_transform function '+function+' is not available, retry')
+        
+    
+    
+    def __step_for_scan(self, X0, it):
+        """
+        outer loop (forcing time step, 1 hour)
+        """
+        arg0 = X0
+        X0 = self.__step(it, arg0)
+        return X0, X0    

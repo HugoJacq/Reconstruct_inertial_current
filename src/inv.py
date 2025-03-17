@@ -13,7 +13,7 @@ import chex
 import time as clock
 import jaxopt
 
-from constants import *
+from src import constants
 
 # for jax
 cpu_device = jax.devices('cpu')[0]
@@ -21,19 +21,26 @@ try:
     gpu_device = jax.devices('gpu')[0]
 except:
     gpu_device = cpu_device
-if FORCE_CPU:
+if constants.FORCE_CPU:
     jax.config.update('jax_platform_name', 'cpu')
     
     
 
-def value_and_grad_jvp(f):   
-    return lambda x: ( f(x), jax.jacfwd(f)(x) )
-    #return lambda x:  jnp.diagonal( jax.jvp(f, (x,), (jnp.ones(( len(x),len(x) )), ) ) )
-def grad_jvp(f):
-    return lambda x: value_and_grad_jvp(f)(x)[1]
+# def value_and_grad_jvp(f):   
+#     return lambda x: ( f(x), jax.jacfwd(f)(x) )
+#     #return lambda x:  jnp.diagonal( jax.jvp(f, (x,), (jnp.ones(( len(x),len(x) )), ) ) )
+# def grad_jvp(f):
+#     return lambda x: value_and_grad_jvp(f)(x)[1]
 
-def value_and_grad_jvp_jit(f):   
-    return jit(lambda x: ( f(x), jax.jacfwd(f)(x) ))
+# def value_and_grad_jvp_jit(f):   
+#     return jit(lambda x: ( f(x), jax.jacfwd(f)(x) ))
+
+
+def value_and_grad_jacfwd(cost, pk):
+    def cost_for_jacfwd(cost):
+        return cost,cost
+    grad, value = jax.jacfwd(cost, has_aux=True)(pk)
+    return value, grad
 
 class InfoState(NamedTuple):
     iter_num: chex.Numeric
@@ -75,6 +82,9 @@ class Variational:
         #self.run_opt_jit = jit(self.run_opt)   
         #self.my_opt_jit = jit(self.my_opt)
 
+
+    def loss(obs,sol):
+        return 
   
     # NO JAX
     def nojax_cost(self, pk):
@@ -267,10 +277,10 @@ class Variational:
     def run_opt(fun, init_params, opt, max_iter, tol):
         # comes from optax example
 
-        value_and_grad_fun = value_and_grad_jvp_jit(fun)
+        #value_and_grad_fun = value_and_grad_jvp_jit(fun)
         def step(carry):
             params, state = carry
-            value, grad = value_and_grad_fun(params) # , state=state
+            value, grad = value_and_grad_jacfwd(params) # , state=state
             jax.debug.print('value, grad, {}, {}',value,grad)
             updates, state = opt.update(
                 grad, state, params, value=value, grad=grad, value_fn=fun
@@ -296,7 +306,7 @@ class Variational:
         # this is not faster than scipy optimize.
         # I need to better tune this
         
-        value_and_grad_fun = value_and_grad_jvp_jit(fun)
+        value_and_grad_fun =1# value_and_grad_jvp_jit(fun)
        
         opt = jaxopt.LBFGS(value_and_grad_fun, value_and_grad=True, maxiter=max_iter, jit=True,
                            verbose=False, linesearch='zoom',tol=1e-8, stop_if_linesearch_fails=True,linesearch_init='current') # ,tol=tol, jit=False, linesearch_init='current'

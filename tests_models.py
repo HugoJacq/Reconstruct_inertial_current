@@ -29,21 +29,34 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 from matplotlib import ticker as mticker
 #import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
+
 # jax.config.update('jax_platform_name', 'cpu')
 
 # custom imports
-sys.path.append('./src/')
-from src.OSSE import *
-from src.observations import *
-from src.forcing import *
-from src.unstek import *
-from src.junstek import *
-from src.inv import *
-from src.tools import *
-from src.scores import *
-from src.benchmark import *
-from src.classic_NIO_models import *
+# sys.path.append('./src/')
+# from src.OSSE import *
+# from src.observations import *
+# from src.forcing import *
+# from src.unstek import *
+# from src.junstek import *
+# from src.inv import *
+# from src.tools import *
+# from src.scores import *
+# from src.benchmark import *
+# from src.classic_NIO_models import *
+
+#from src import OSSE
+from src import observations
+from src import forcing
+#from src import unstek
+from src import junstek
+from src import inv
+from src import tools
+#from src import scores
+#from src import benchmark
+from src import classic_NIO_models
 
 start = clock.time()
 
@@ -73,12 +86,12 @@ SOURCE              = 'Croco'   # MITgcm Croco
 dt                  = 60        # timestep of the model (s) 
 dt_OSSE             = 3600      # timestep of the OSSE (s)
 period_obs          = 86400      # s, how many second between observations #86400    
-Nl                  = 2         # number of layers
-dT                  = 3*86400   # how much vectork K changes with time, base change to exp
+Nl                  = 1         # number of layers
+dT                  = 3*86400   # how much vectork K changes with time, basis change to exp
 dt_forcing          = 3600      # forcing timestep
     
 # MINIMIZATION
-MINIMIZE            = True      # switch to do the minimisation process
+MINIMIZE            = False      # switch to do the minimisation process
 maxiter             = 100       # max number of iteration
 
 # tests
@@ -86,8 +99,8 @@ TEST_JUNSTEK1D              = False     # implementing junstek1D
 TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
 TEST_CLASSIC_SLAB           = False     # implementing classic_slab1D
-TEST_CLASSIC_SLAB_KT        = True     # implementing classic_slab1D_Kt
-
+TEST_CLASSIC_SLAB_KT        = False     # implementing classic_slab1D_Kt
+TEST_CLASSIC_SLAB_EQX       = True      # 
 # regrid data
 path_regrid = './data_regrid/'
 name_regrid = 'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
@@ -131,10 +144,10 @@ if __name__ == "__main__":
     # regrided file
     # Regriding is done with "regrid_croco.py"
     file = path_regrid+name_regrid 
-    forcing1D = Forcing1D(point_loc, dt_OSSE, file)
-    observations1D = Observation1D(point_loc, period_obs, dt_OSSE, file)
-    forcing2D = Forcing2D(dt_forcing, file, LON_bounds, LAT_bounds)
-    observations2D = Observation2D(period_obs, dt_OSSE, file, LON_bounds, LAT_bounds)
+    forcing1D = forcing.Forcing1D(point_loc, dt_OSSE, file)
+    observations1D = observations.Observation1D(point_loc, period_obs, dt_OSSE, file)
+    forcing2D = forcing.Forcing2D(dt_forcing, file, LON_bounds, LAT_bounds)
+    observations2D = observations.Observation2D(period_obs, dt_OSSE, file, LON_bounds, LAT_bounds)
     
     if Nl==1:
         vector_k = jnp.asarray([-11.31980127, -10.28525189])
@@ -145,18 +158,18 @@ if __name__ == "__main__":
     if TEST_JUNSTEK1D:
         print('* test jUnstek1D_v2, N='+str(Nl)+' layers')
 
-        model = jUnstek1D_v2(dt, Nl, forcing1D)
-        var = Variational(model, observations1D)    
+        model = junstek.jUnstek1D_v2(dt, Nl, forcing1D)
+        var = inv.Variational(model, observations1D)    
         
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_k)
 
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
         _, Ca = model.do_forward_jit(vector_k)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
         
         t3 = clock.time()
@@ -182,16 +195,16 @@ if __name__ == "__main__":
                             jac=var.grad_cost,
                             options={'disp': True, 'maxiter': maxiter})
                 
-            print_info(var.cost,res)
+            inv.print_info(var.cost,res)
             vector_k = res['x']
             _, Ca = model.do_forward_jit(vector_k)
-            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
     
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
         
-        RMSE = score_RMSE(Ua, U) 
+        RMSE = tools.score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
@@ -199,7 +212,7 @@ if __name__ == "__main__":
         ax.plot(forcing1D.time/86400, Ua, c='g', label='Unstek')
         ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_k),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_k),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
@@ -210,8 +223,8 @@ if __name__ == "__main__":
         """
         print('* test jUnstek1D_Kt_v2, N='+str(Nl)+' layers')
             
-        model = jUnstek1D_Kt_v2(dt, Nl, forcing1D, dT)
-        var = Variational(model, observations1D)    
+        model = junstek.jUnstek1D_Kt_v2(dt, Nl, forcing1D, dT)
+        var = inv.Variational(model, observations1D)    
         
         # transform into 1D vector
         vector_kt = model.kt_ini(vector_k)
@@ -220,12 +233,12 @@ if __name__ == "__main__":
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_kt)
 
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
         _, Ca = model.do_forward_jit(vector_kt)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
         
         t3 = clock.time()
@@ -251,16 +264,16 @@ if __name__ == "__main__":
                             jac=var.grad_cost,
                             options={'disp': True, 'maxiter': maxiter})
                 
-            print_info(var.cost,res)
+            inv.print_info(var.cost,res)
             vector_kt = res['x']
             _, Ca = model.do_forward_jit(vector_kt)
-            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
     
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
         
-        RMSE = score_RMSE(Ua, U) 
+        RMSE = tools.score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
@@ -268,7 +281,7 @@ if __name__ == "__main__":
         ax.plot(forcing1D.time/86400, Ua, c='g', label='Unstek')
         ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_kt),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
@@ -285,8 +298,8 @@ if __name__ == "__main__":
         """        
         print('* test jUnstek1D_Kt_spatial, N='+str(Nl)+' layers')        
         
-        model = jUnstek1D_Kt_spatial(dt, Nl, forcing2D, dT)
-        var = Variational(model, observations2D)
+        model = junstek.jUnstek1D_Kt_spatial(dt, Nl, forcing2D, dT)
+        var = inv.Variational(model, observations2D)
 
         # transform into 1D vector
         vector_kt = model.kt_ini(vector_k)
@@ -295,12 +308,12 @@ if __name__ == "__main__":
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_kt)
 
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
         _, Ca = model.do_forward_jit(vector_kt)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
         
         t3 = clock.time()
@@ -364,14 +377,14 @@ if __name__ == "__main__":
                             jac=var.grad_cost,
                             options={'disp': True, 'maxiter': maxiter})
                 
-            print_info(var.cost,res)
+            inv.print_info(var.cost,res)
             vector_kt = res['x']
             _, Ca = model.do_forward_jit(vector_kt)
-            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         
         # select at location
-        indx = nearest(forcing2D.data.lon.values,point_loc[0])
-        indy = nearest(forcing2D.data.lat.values,point_loc[1])
+        indx = tools.nearest(forcing2D.data.lon.values,point_loc[0])
+        indy = tools.nearest(forcing2D.data.lat.values,point_loc[1])
         Ua = Ua[:,indy,indx]
         U = forcing2D.data.U[:,indy,indx].values
         U_shape = forcing2D.data.U.shape
@@ -379,7 +392,7 @@ if __name__ == "__main__":
         Uo, Vo = observations2D.get_obs()
         Uo = Uo[:,indy,indx]
         
-        RMSE = score_RMSE(Ua, U) 
+        RMSE = tools.score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
@@ -388,7 +401,7 @@ if __name__ == "__main__":
         ax.plot(forcing2D.time/86400, Ua, c='g', label='Unstek')
         ax.scatter(observations2D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_kt),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
@@ -398,18 +411,18 @@ if __name__ == "__main__":
         print('* test classic_slab1D, N='+str(Nl)+' layers')
         
             
-        model = classic_slab1D(dt, Nl, forcing1D)
-        var = Variational(model, observations1D)    
+        model = classic_NIO_models.classic_slab1D(dt, Nl, forcing1D)
+        var = inv.Variational(model, observations1D)    
         
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_k)
 
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
         _, Ca = model.do_forward_jit(vector_k)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
         
         t3 = clock.time()
@@ -435,16 +448,16 @@ if __name__ == "__main__":
                             jac=var.grad_cost,
                             options={'disp': True, 'maxiter': maxiter})
                 
-            print_info(var.cost,res)
+            inv.print_info(var.cost,res)
             vector_k = res['x']
             _, Ca = model.do_forward_jit(vector_k)
-            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
     
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
         
-        RMSE = score_RMSE(Ua, U) 
+        RMSE = tools.score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
@@ -452,7 +465,7 @@ if __name__ == "__main__":
         ax.plot(forcing1D.time/86400, Ua, c='g', label='slab')
         ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_k),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_k),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
@@ -460,8 +473,8 @@ if __name__ == "__main__":
         
     if TEST_CLASSIC_SLAB_KT:
         print('* test classic_slab1D_kt, N='+str(Nl)+' layers')
-        model = classic_slab1D_Kt(dt, Nl, forcing1D, dT)
-        var = Variational(model, observations1D)    
+        model = classic_NIO_models.classic_slab1D_Kt(dt, Nl, forcing1D, dT)
+        var = inv.Variational(model, observations1D)    
         
         # transform into 1D vector
         vector_kt = model.kt_ini(vector_k)
@@ -470,12 +483,12 @@ if __name__ == "__main__":
         t1 = clock.time()
         _, Ca = model.do_forward_jit(vector_kt)
 
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         t2 = clock.time()
         print('time, forward model (with compile)',t2-t1)
         
         _, Ca = model.do_forward_jit(vector_kt)
-        Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+        Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
         print('time, forward model (no compile)',clock.time()-t2)
         
         t3 = clock.time()
@@ -501,16 +514,16 @@ if __name__ == "__main__":
                             jac=var.grad_cost,
                             options={'disp': True, 'maxiter': maxiter})
                 
-            print_info(var.cost,res)
+            inv.print_info(var.cost,res)
             vector_kt = res['x']
             _, Ca = model.do_forward_jit(vector_kt)
-            Ua, Va = np.real(Ca)[0], np.imag(Ca)[0]
+            Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
     
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
         
-        RMSE = score_RMSE(Ua, U) 
+        RMSE = tools.score_RMSE(Ua, U) 
         print('RMSE is',RMSE)
         # PLOT trajectory
         fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
@@ -518,14 +531,42 @@ if __name__ == "__main__":
         ax.plot(forcing1D.time/86400, Ua, c='g', label='slab')
         ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(np.round(RMSE,4))+' cost='+str(np.round(var.cost(vector_kt),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_kt),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
         fig.savefig(path_save_png+'JAX_test_classic_slab1D_Kt_'+str(Nl)+'layers'+namesave_loc+'.png')
         
-         
+    if TEST_CLASSIC_SLAB_EQX:
+        print('* test classic_slab1D_eqx, N='+str(Nl)+' layers')
+        
+        
+        # variables
+        U0 = 0.0
+        V0 = 0.0
+        # control vector
+        pk = jnp.asarray([-11.31980127, -10.28525189])
+        # parameters
+        TAx = jnp.asarray(forcing1D.TAx)
+        TAy = jnp.asarray(forcing1D.TAy)
+        fc = jnp.asarray(forcing1D.fc)
+        
+        t0 = 0.
+        t1 = 20*3600. #28*86400.
+        dt_forcing=3600.
+        dt_saveat = dt_forcing #60.
+        
+        mymodel = classic_NIO_models.classic_slab1D_eqx(U0, V0, pk, TAx, TAy, fc, dt_forcing, Nl)
+        
+        time1 = clock.time()
+        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        print('time, forward model (with compile)',clock.time()-time1)
+        
+        time2 = clock.time()
+        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        print('time, forward model (no compile)',clock.time()-time2)
+        
         
     end = clock.time()
-    print('Total execution time = '+str(np.round(end-start,2))+' s')
+    print('Total execution time = '+str(jnp.round(end-start,2))+' s')
     plt.show()

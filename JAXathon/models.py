@@ -38,7 +38,7 @@ class Unstek1D:
         self.fc = forcing.fc  
         # observations
         self.Uo, self.Vo = observations.get_obs()
-        self.Ri = self.Uo*0.+1
+        self    .Ri = self.Uo*0.+1
         # for reconstructed 
         self.nl = Nl
         self.isJax = False

@@ -278,3 +278,6 @@ JAXathon/minimization_test_jUnstek1D_2layers.png
 JAXathon/minimization_test_Unstek1D_2layers.png
 JAXathon/forward_test_jUnstek1D_2layers.png
 JAXathon/forward_test_Unstek1D_2layers.png
+png_tests_models/JAX_test_classic_slab1D_Kt_1layers-50.0E_35.0N.png
+png_tests_models/JAX_test_junstek1D_kt_spatial_1layers-50.0E_35.0N_R0.2.png
+png_tests_models/JAX_test_junstek1D_v2_1layers-50.0E_35.0N.png
