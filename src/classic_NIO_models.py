@@ -24,6 +24,8 @@ import jax.numpy as jnp
 from jax import jit, lax
 from functools import partial
 import equinox as eqx
+from diffrax import ODETerm, diffeqsolve, Euler
+import diffrax
 
 from .constants import FORCE_CPU
 
@@ -563,11 +565,11 @@ class classic_slab1D_eqx(eqx.Module):
     # control vector
     pk : jnp.array
     # parameters
-    TAx : jnp.array
-    TAy : jnp.array
+    TA : jnp.array
     fc : jnp.array
     dt_forcing : np.float64
     nl : np.int32
+    AD_mode : str
     
     @eqx.filter_jit
     def __call__(self, t0, t1, dt, SaveAt = None):
@@ -581,16 +583,9 @@ class classic_slab1D_eqx(eqx.Module):
             ns = np.int32((t1-t0)//self.dt_forcing)
         else:
             ns = np.int32((t1-t0)//SaveAt)
-        
      
         # initialization
         U = jnp.zeros( (self.nl, ns), dtype='complex') + (self.U0+1j*self.V0)
-        
-        #U = U 
-        time_forcing = jnp.arange(t0,t1,self.dt_forcing)
-        data_forcing = jnp.asarray(self.TAx+1j*self.TAy, dtype='complex')
-        # initialize interpolation function
-        TA_t = lambda t: self.my_interpolate(t, time_forcing, data_forcing)
         
         # optimization transform of control parameters
         K = self.K_transform( self.pk )
@@ -671,11 +666,11 @@ class classic_slab1D_eqx(eqx.Module):
             itm = it*nsubsteps + inner_t
             
             # on-the-fly (linear) interpolation of forcing
-            # aa = jnp.mod(itm,nsubsteps)/nsubsteps
-            # itsup = lax.select(it+1>=self.nt, -1, it+1) 
-            # TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
-            current_time = itm*dt
-            TA = TA_t(current_time)
+            aa = jnp.mod(itm,nsubsteps)/nsubsteps
+            itsup = lax.select(it+1>=len(self.TA), -1, it+1) 
+            TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
+            # current_time = itm*dt
+            # TA = TA_t(current_time)
             # jax.debug.print('current time = {}',current_time)
             arg2 = itm, K, TA, U
             # loop on layers
@@ -686,7 +681,7 @@ class classic_slab1D_eqx(eqx.Module):
             X0 = it, K, U        
             return X0, X0
      
-        @eqx.debug.assert_max_traces(max_traces=1)
+        
         def __step(it, arg0):
             """
             outer loop (forcing time step, 1 hour)
@@ -708,21 +703,7 @@ class classic_slab1D_eqx(eqx.Module):
         
         
         return U
-    
-    
-    
-    
-    
-    
-    def my_interpolate(self, t, time_array, data_array):
-        # Custom efficient interpolation 
-        idx = jnp.searchsorted(time_array, t) - 1
-        idx = jnp.clip(idx, 0, len(time_array) - 2)
-        t0, t1 = time_array[idx], time_array[idx + 1]
-        y0, y1 = data_array[idx], data_array[idx + 1]
-        alpha = (t - t0) / (t1 - t0)
-        return y0 + alpha * (y1 - y0)
-    
+        
     def K_transform(self, pk, order=0, function='exp'):
         """
         Transform the K vector to improve minimization process
@@ -741,12 +722,94 @@ class classic_slab1D_eqx(eqx.Module):
         else:
             raise Exception('K_transform function '+function+' is not available, retry')
         
+class classic_slab1D_eqx_difx(eqx.Module):
+    # variables
+    # U0 : np.float64
+    # V0 : np.float64
+    # control vector
+    pk : jnp.array
+    # parameters
+    TAx : jnp.array
+    TAy : jnp.array
+    fc : jnp.array
+    dt_forcing : np.int32
+    nl : np.int32
+    AD_mode : str
     
+    @eqx.filter_jit
+    def __call__(self, t0, t1, dt, SaveAt = None):
+
+        def vector_field(t, C, args):
+            U,V = C
+            fc, K, TAx, TAy = args
+            
+            # on the fly interpolation
+            nsubsteps = self.dt_forcing // dt
+            it = jnp.array(t//dt, int)
+            itf = jnp.array(it//nsubsteps, int)
+            aa = jnp.mod(it,nsubsteps)/nsubsteps
+            itsup = lax.select(itf+1>=len(TAx), -1, itf+1) 
+            TAx = (1-aa)*TAx[itf] + aa*TAx[itsup]
+            TAy = (1-aa)*TAy[itf] + aa*TAy[itsup]
+            
+            # physic
+            d_U = fc*V + K[0]*TAx - K[1]*U
+            d_V = -fc*U + K[0]*TAy - K[1]*V
+            d_y = d_U,d_V
+            return d_y
+        
+        term = ODETerm(vector_field)
+        
+        solver = Euler()
+        # Auto-diff mode
+        if self.AD_mode=='F':
+            adjoint = diffrax.ForwardMode()
+        else:
+            adjoint = diffrax.RecursiveCheckpointAdjoint(checkpoints=10)
     
-    def __step_for_scan(self, X0, it):
-        """
-        outer loop (forcing time step, 1 hour)
-        """
-        arg0 = X0
-        X0 = self.__step(it, arg0)
-        return X0, X0    
+        #y0 = self.U0,self.V0
+        y0 = 0.0,0.0
+        # control
+        K = jnp.exp( jnp.asarray(self.pk) )
+  
+        args = self.fc, K, self.TAx, self.TAy
+        
+        if SaveAt is None:
+            saveat = diffrax.SaveAt(steps=True)
+        else:
+            saveat = diffrax.SaveAt(ts=jnp.arange(t0,t1,SaveAt))
+        
+        maxstep = int((t1-t0)//dt) +1 
+        
+        return diffeqsolve(term, 
+                           solver, 
+                           t0=t0, 
+                           t1=t1, 
+                           y0=y0, 
+                           args=args, 
+                           dt0=dt, 
+                           saveat=saveat,
+                           adjoint=adjoint,
+                           max_steps=maxstep) # here this is needed to be able to forward AD
+    
+    # def ODE(self):
+        
+    #     def vector_field(t, C, args):
+    #         # on the fly interpolation
+    #         nsubsteps = self.dt_forcing // self.dt
+    #         itf = jnp.array(it//dt//nsubsteps, int)
+
+    #         aa = jnp.mod(it,nsubsteps)/nsubsteps
+    #         itsup = lax.select(itf+1>=self.nt, -1, itf+1) 
+    #         TA = (1-aa)*self.TA[itf] + aa*self.TA[itsup]
+            
+            
+            
+    #         U,V = C
+    #         fc, K, TAx, TAy = args
+    #         d_U = fc*V + K[0]*TAx(t) - K[1]*U
+    #         d_V = -fc*U + K[0]*TAy - K[1]*V
+    #         d_y = d_U,d_V
+    #         return d_y
+            
+    #     return ODETerm(vector_field)

@@ -98,9 +98,10 @@ maxiter             = 100       # max number of iteration
 TEST_JUNSTEK1D              = False     # implementing junstek1D
 TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
-TEST_CLASSIC_SLAB           = False     # implementing classic_slab1D
+TEST_CLASSIC_SLAB           = True     # implementing classic_slab1D
 TEST_CLASSIC_SLAB_KT        = False     # implementing classic_slab1D_Kt
 TEST_CLASSIC_SLAB_EQX       = True      # 
+TEST_CLASSIC_SLAB_EQX_DIFX  = True
 # regrid data
 path_regrid = './data_regrid/'
 name_regrid = 'croco_1h_inst_surf_2006-02-01-2006-02-28_0.1deg_conservative.nc'
@@ -540,23 +541,25 @@ if __name__ == "__main__":
     if TEST_CLASSIC_SLAB_EQX:
         print('* test classic_slab1D_eqx, N='+str(Nl)+' layers')
         
+        AD_mode = 'F'
         
         # variables
         U0 = 0.0
         V0 = 0.0
         # control vector
-        pk = jnp.asarray([-11.31980127, -10.28525189])
+        pk = vector_k  #jnp.asarray([-11.31980127, -10.28525189])
         # parameters
         TAx = jnp.asarray(forcing1D.TAx)
         TAy = jnp.asarray(forcing1D.TAy)
+        TA = TAx+1j*TAy
         fc = jnp.asarray(forcing1D.fc)
         
         t0 = 0.
-        t1 = 20*3600. #28*86400.
+        t1 = 28*86400. #
         dt_forcing=3600.
         dt_saveat = dt_forcing #60.
         
-        mymodel = classic_NIO_models.classic_slab1D_eqx(U0, V0, pk, TAx, TAy, fc, dt_forcing, Nl)
+        mymodel = classic_NIO_models.classic_slab1D_eqx(U0, V0, pk, TA, fc, dt_forcing, Nl, AD_mode)
         
         time1 = clock.time()
         C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
@@ -565,6 +568,37 @@ if __name__ == "__main__":
         time2 = clock.time()
         C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
         print('time, forward model (no compile)',clock.time()-time2)
+        
+    if TEST_CLASSIC_SLAB_EQX_DIFX:
+        print('* test classic_slab1D_eqx_dfx, N='+str(Nl)+' layers')
+        
+        
+        AD_mode = 'F'
+        
+        # control vector
+        pk = vector_k #jnp.asarray([-11.31980127, -10.28525189])
+        # parameters
+        TAx = jnp.asarray(forcing1D.TAx)
+        TAy = jnp.asarray(forcing1D.TAy)
+        fc = jnp.asarray(forcing1D.fc)
+        
+        t0 = 0.
+        t1 = 28*86400. #
+        dt_forcing=3600.
+        dt_saveat = dt_forcing #60.
+        
+        mymodel = classic_NIO_models.classic_slab1D_eqx_difx(pk, TAx, TAy, fc, dt_forcing, Nl, AD_mode)
+        
+        time1 = clock.time()
+        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        print('time, forward model (with compile)',clock.time()-time1)
+        
+        time2 = clock.time()
+        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        print('time, forward model (no compile)',clock.time()-time2)
+        
+        
+        
         
         
     end = clock.time()
