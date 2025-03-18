@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 import time as clock
 import jax
@@ -9,7 +10,7 @@ from functools import partial
 import equinox as eqx
 import diffrax
 from diffrax import Euler, diffeqsolve, ODETerm
-
+os.environ["EQX_ON_ERROR"] = "nan"
 jax.config.update("jax_enable_x64", True)
 
 class classic_slab1D:
@@ -60,8 +61,9 @@ class classic_slab1D_eqx(eqx.Module):
     dt : np.int32           # |
     
     is_difx : bool          # use diffrax or not
+    interp_fn : bool        # use interoplation function or not
     
-    def __init__(self, pk, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx):
+    def __init__(self, pk, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx, interp_fn=False):
         self.fc = jnp.asarray(fc)  
         self.TA = jnp.asarray(TAx) + 1j*jnp.asarray(TAy)
         self.pk = pk
@@ -71,31 +73,40 @@ class classic_slab1D_eqx(eqx.Module):
         self.dt_forcing = dt_forcing
         self.nt = nt
         self.is_difx = is_difx
+        self.interp_fn = interp_fn
         
     @eqx.filter_jit
     def __call__(self):
         K = jnp.exp(self.pk)
         nsubsteps = self.dt_forcing // self.dt
         
+        if self.interp_fn:
+                TAx_t, TAy_t = self.TA_at_t(jnp.real(self.TA), jnp.imag(self.TA), self.t0, self.t1, self.dt_forcing)
+        
         if self.is_difx: # diffrax time forward
-
+            
+            
+            
             def vector_field(t, C, args):
                 U,V = C
                 fc, K, TAx, TAy = args
-                # on the fly interpolation
-                it = jnp.array(t//dt, int)
-                itf = jnp.array(it//nsubsteps, int)
-                aa = jnp.mod(it,nsubsteps)/nsubsteps
-                itsup = lax.select(itf+1>=len(TAx), -1, itf+1) 
-                TAx = (1-aa)*TAx[itf] + aa*TAx[itsup]
-                TAy = (1-aa)*TAy[itf] + aa*TAy[itsup]
+                if self.interp_fn:
+                    TAx,TAy = TAx_t.evaluate(t), TAy_t.evaluate(t)
+                else:
+                    # on the fly interpolation
+                    it = jnp.array(t//dt, int)
+                    itf = jnp.array(it//nsubsteps, int)
+                    aa = jnp.mod(it,nsubsteps)/nsubsteps
+                    itsup = lax.select(itf+1>=len(TAx), -1, itf+1) 
+                    TAx = (1-aa)*TAx[itf] + aa*TAx[itsup]
+                    TAy = (1-aa)*TAy[itf] + aa*TAy[itsup]
                 # physic
                 d_U = fc*V + K[0]*TAx - K[1]*U
                 d_V = -fc*U + K[0]*TAy - K[1]*V
                 d_y = d_U,d_V
                 return d_y
 
-            sol = diffeqsolve(term=ODETerm(vector_field), 
+            sol = diffeqsolve(terms=ODETerm(vector_field), 
                            solver=Euler(), 
                            t0=self.t0, 
                            t1=self.t1, 
@@ -113,10 +124,14 @@ class classic_slab1D_eqx(eqx.Module):
             def __one_step(X0, it):
                 K, U = X0  
                 # interpolation
-                itf = jnp.array(it//nsubsteps, int)
-                aa = jnp.mod(it,nsubsteps)/nsubsteps
-                itsup = lax.select(itf+1>=self.nt, -1, itf+1) 
-                TA = (1-aa)*self.TA[itf] + aa*self.TA[itsup]
+                if self.interp_fn:
+                    t = self.t0 + it*self.dt
+                    TA = TAx_t.evaluate(t) +1j*TAy_t.evaluate(t)
+                else:
+                    itf = jnp.array(it//nsubsteps, int)
+                    aa = jnp.mod(it,nsubsteps)/nsubsteps
+                    itsup = lax.select(itf+1>=self.nt, -1, itf+1) 
+                    TA = (1-aa)*self.TA[itf] + aa*self.TA[itsup]
                 # one time forward
                 U = U.at[it+1].set( U[it] + self.dt*(-1j*self.fc*U[it] 
                                                 + K[0]*TA 
@@ -128,6 +143,15 @@ class classic_slab1D_eqx(eqx.Module):
             final, _ = lax.scan(lambda carry, y: __one_step(carry, y), X0, jnp.arange(0,self.nt-1)) # 
             _, U = final
         return jnp.real(U),jnp.imag(U)
+    def TA_at_t(self, TAx, TAy, t0, t1, dt_forcing):
+        """
+        return a function that interpolate at t the forcing
+        """
+        time_forcing = jnp.arange(t0, t1, dt_forcing, dtype=float)
+        # print(len(time_forcing),len(TAx))
+        TAx_t = diffrax.LinearInterpolation(time_forcing, TAx)
+        TAy_t = diffrax.LinearInterpolation(time_forcing, TAy)
+        return TAx_t, TAy_t
 
 def benchmark(func, N=20):
     L = np.zeros(N)
@@ -177,13 +201,8 @@ pkini = jnp.array([-9.,-11.])
 jmodel = classic_slab1D(TAx, TAy, fc, t0, nt, dt, dt_forcing)
 eqxmodel = classic_slab1D_eqx(pktarget, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=False)
 eqxmodel_dfx = classic_slab1D_eqx(pktarget, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=True)
+eqxmodel_fninterp = classic_slab1D_eqx(pktarget, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=False, interp_fn=True)
 N = 10
-
-print('Forward model:')
-print('     jmodel:         mean, std (s)', benchmark(partial(jmodel.do_forward_jit,pk=pktarget),N=N))
-print('     eqxmodel:       mean, std (s)', benchmark(eqxmodel,N=N))
-print('     eqx_dfx_model:  mean, std (s)', benchmark(eqxmodel_dfx,N=N))
-
 
 # make some observations
 dt_obs = 86400 # 1 per day
@@ -196,19 +215,29 @@ for k in range(nt):
 
 # new models with new control parameter pk
 eqxmodel_2 = classic_slab1D_eqx(pkini, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=False)
+eqxmodel_fninterp_2 = classic_slab1D_eqx(pktarget, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=False, interp_fn=True)
 eqxmodel_dfx_2 = classic_slab1D_eqx(pkini, TAx, TAy, fc, t0, nt, dt, dt_forcing, is_difx=True)
 dyn_eqx, stat_eqx = my_partition(eqxmodel_2)
+dyn_eqx_fni, stat_eqx_fni = my_partition(eqxmodel_fninterp_2)
 dyn_eqx_dfx, stat_eqx_dfx = my_partition(eqxmodel_dfx_2)
 
+print('Forward model:')
+print('     jmodel:           mean, std (s)', benchmark(partial(jmodel.do_forward_jit,pk=pktarget),N=N))
+print('     eqxmodel:         mean, std (s)', benchmark(eqxmodel,N=N))
+print('     eqxmodel_interpn: mean, std (s)', benchmark(eqxmodel_fninterp,N=N))
+print('     eqx_dfx_model:    mean, std (s)', benchmark(eqxmodel_dfx,N=N))
+
 print('Cost:')
-print('     jmodel:         mean, std (s)', benchmark(partial(cost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
-print('     eqxmodel:       mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx,stat_eqx,obs),N=N))
-print('     eqx_dfx_model:  mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
+print('     jmodel:           mean, std (s)', benchmark(partial(cost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
+print('     eqxmodel:         mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx,stat_eqx,obs),N=N))
+print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
+print('     eqx_dfx_model:    mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
 
 print('gradient (forward):')
-print('     jmodel:         mean, std (s)', benchmark(partial(dcost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
-print('     eqxmodel:       mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx,stat_eqx,obs),N=N))
-print('     eqx_dfx_model:  mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
+print('     jmodel:           mean, std (s)', benchmark(partial(dcost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
+print('     eqxmodel:         mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx,stat_eqx,obs),N=N))
+print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
+print('     eqx_dfx_model:    mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
 
 
 
