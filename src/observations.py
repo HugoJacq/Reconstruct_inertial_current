@@ -23,7 +23,7 @@ class Observation1D:
         self.U,self.V = self.data.U.values,self.data.V.values
         self.dt = dt_model
         self.obs_period = periode_obs
-        self.time_obs = np.arange(0, len(self.data.time)*dt_model,periode_obs)
+        self.time_obs = np.arange(0., len(self.data.time)*dt_model,periode_obs)
 
     def get_obs(self):
         """
