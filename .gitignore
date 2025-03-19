@@ -282,3 +282,6 @@ png_tests_models/JAX_test_classic_slab1D_Kt_1layers-50.0E_35.0N.png
 png_tests_models/JAX_test_junstek1D_kt_spatial_1layers-50.0E_35.0N_R0.2.png
 png_tests_models/JAX_test_junstek1D_v2_1layers-50.0E_35.0N.png
 issue_performance_eqx_jax/messages.txt
+png_tests_models/JAX_test_classic_slab1D_eqx_difx_1layers-50.0E_35.0N.png
+png_tests_models/JAX_test_classic_slab1D_eqx_1layers-50.0E_35.0N.png
+png_tests_models/JAX_test_junstek1D_kt_v2_1layers-50.0E_35.0N.png

@@ -29,6 +29,10 @@ class Observation1D:
         """
         OSSE of current from the coupled OA model
         """
+        # HERE
+        # it would be nice to have the same shape for any model output and the observations.
+        # use a fill value ?
+        # or see https://stackoverflow.com/questions/71692885/handle-varying-shapes-in-jax-numpy-arrays-jit-compatible
         self.Uo = self.U[::self.obs_period//self.dt]
         self.Vo = self.V[::self.obs_period//self.dt]
         return self.Uo,self.Vo
