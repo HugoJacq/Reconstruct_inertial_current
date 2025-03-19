@@ -1,5 +1,6 @@
 import numpy as np
 import os
+os.environ["EQX_ON_ERROR"] = "nan"
 import matplotlib.pyplot as plt
 import time as clock
 import jax
@@ -10,7 +11,7 @@ from functools import partial
 import equinox as eqx
 import diffrax
 from diffrax import Euler, diffeqsolve, ODETerm
-os.environ["EQX_ON_ERROR"] = "nan"
+
 jax.config.update("jax_enable_x64", True)
 
 class classic_slab1D:
@@ -84,9 +85,7 @@ class classic_slab1D_eqx(eqx.Module):
                 TAx_t, TAy_t = self.TA_at_t(jnp.real(self.TA), jnp.imag(self.TA), self.t0, self.t1, self.dt_forcing)
         
         if self.is_difx: # diffrax time forward
-            
-            
-            
+
             def vector_field(t, C, args):
                 U,V = C
                 fc, K, TAx, TAy = args
@@ -112,7 +111,8 @@ class classic_slab1D_eqx(eqx.Module):
                            t1=self.t1, 
                            y0=(0.0, 0.0), 
                            args=(self.fc, K, jnp.real(self.TA), jnp.imag(self.TA)), 
-                           dt0=dt, 
+                           dt0=None, #dt, 
+                           stepsize_controller=diffrax.StepTo(jnp.arange(self.t0, self.t1+self.dt, self.dt)),
                            saveat=diffrax.SaveAt(steps=True),
                            adjoint=diffrax.ForwardMode(),
                            max_steps=nt).ys
@@ -143,6 +143,7 @@ class classic_slab1D_eqx(eqx.Module):
             final, _ = lax.scan(lambda carry, y: __one_step(carry, y), X0, jnp.arange(0,self.nt-1)) # 
             _, U = final
         return jnp.real(U),jnp.imag(U)
+    
     def TA_at_t(self, TAx, TAy, t0, t1, dt_forcing):
         """
         return a function that interpolate at t the forcing
@@ -162,10 +163,8 @@ def benchmark(func, N=20):
         L[k] = clock.time()-time1
     return L.mean(), L.std()
 
-
 def cost(sol, obs): return jnp.nanmean( (sol[0]-obs[0])**2 + (sol[0]-obs[0])**2)
     
-
 def cost_j(pk, jmodel, obs):
     sol = jmodel.do_forward_jit(pk)
     return cost(sol, obs)
@@ -224,19 +223,19 @@ dyn_eqx_dfx, stat_eqx_dfx = my_partition(eqxmodel_dfx_2)
 print('Forward model:')
 print('     jmodel:           mean, std (s)', benchmark(partial(jmodel.do_forward_jit,pk=pktarget),N=N))
 print('     eqxmodel:         mean, std (s)', benchmark(eqxmodel,N=N))
-print('     eqxmodel_interpn: mean, std (s)', benchmark(eqxmodel_fninterp,N=N))
+#print('     eqxmodel_interpn: mean, std (s)', benchmark(eqxmodel_fninterp,N=N))
 print('     eqx_dfx_model:    mean, std (s)', benchmark(eqxmodel_dfx,N=N))
 
 print('Cost:')
 print('     jmodel:           mean, std (s)', benchmark(partial(cost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
 print('     eqxmodel:         mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx,stat_eqx,obs),N=N))
-print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
+#print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
 print('     eqx_dfx_model:    mean, std (s)', benchmark(partial(cost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
 
 print('gradient (forward):')
 print('     jmodel:           mean, std (s)', benchmark(partial(dcost_j,pk=pkini,jmodel=jmodel,obs=obs),N=N))
 print('     eqxmodel:         mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx,stat_eqx,obs),N=N))
-print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
+#print('     eqxmodel_interpn: mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_fni,stat_eqx_fni,obs),N=N))
 print('     eqx_dfx_model:    mean, std (s)', benchmark(partial(dcost_eqx,dyn_eqx_dfx,stat_eqx_dfx,obs),N=N))
 
 
