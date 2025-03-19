@@ -706,9 +706,9 @@ class jUnstek1D_Kt_spatial:
         #jax.debug.print('it = {}, itm = {}, aa = {}',it,itm,aa)
         #print('it,itm,aa = {}, {}, {}',it,itm,aa)
         #it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
-        itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
-        TA = (1-aa)*self.TA[it,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
-        Ktnow = (1-aa)*Kt[it] + aa*Kt[itsup]
+        itsup = lax.select(it+1>=self.nt, -1, it)         # if itsup>=self.nt: itsup=-1, else: it+1
+        TA = (1-aa)*self.TA[it-1,:,:] + aa*self.TA[itsup,:,:] # TA is stress at current model time step
+        Ktnow = (1-aa)*Kt[it-1] + aa*Kt[itsup]
         
         arg2 = itm, Ktnow, TA, U
         # loop on layers
@@ -771,17 +771,8 @@ class jUnstek1D_Kt_spatial:
         #jax.debug.print('pk = {}',pk)
 
         # starting from nul current
-        #U = jnp.zeros( (self.nl, self.ntm, self.ny, self.nx), dtype='complex')
-        # ici pas besoin de save tous les pas de temps pour la fonction cout !
-        # (pour obtenir une trajectoire si, quand le K est final)
         # save every hour (model OSSE)
         U = jnp.zeros( (self.nl, self.nt, self.ny, self.nx), dtype='complex')
-        # print(U.shape)
-        # print(U.dtype)
-        
-        # i need to fill in U only at
-        #   dt if save_all_dt=True
-        #   obs_dt if save_all_dt=False
         
         # -> voir la fonction step (obs_dt) et one_step (dt) dans MSHH de Florian
         # https://github.com/leguillf/MASSH/blob/main/mapping/src/tools_4Dvar.py
@@ -809,7 +800,7 @@ class jUnstek1D_Kt_spatial:
             # lax.scan version
             X0 = Kt, U
             #final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,3 )) #self.nt))
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt))
             _, U = final
             
         self.Ur_traj = U
@@ -1026,9 +1017,9 @@ class jUnstek1D_Kt_v2:
         #jax.debug.print('it = {}, itm = {}, aa = {}',it,itm,aa)
         #print('it,itm,aa = {}, {}, {}',it,itm,aa)
         #it = lax.select(aa==0,it+1,it)                      # if aa==0: it += 1
-        itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
-        TA = (1-aa)*self.TA[it] + aa*self.TA[itsup] # TA is stress at current model time step
-        Ktnow = (1-aa)*Kt[it] + aa*Kt[itsup]
+        itsup = lax.select(it+1>=self.nt, -1, it)         # if itsup>=self.nt: itsup=-1, else: it+1
+        TA = (1-aa)*self.TA[it-1] + aa*self.TA[itsup] # TA is stress at current model time step
+        Ktnow = (1-aa)*Kt[it-1] + aa*Kt[itsup]
         
         arg2 = itm, Ktnow, TA, U
         # loop on layers
@@ -1129,7 +1120,7 @@ class jUnstek1D_Kt_v2:
             # lax.scan version
             X0 = Kt, U
             #final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,3 )) #self.nt))
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt))
             _, U = final
             
         self.Ur_traj = U
@@ -1276,8 +1267,8 @@ class jUnstek1D_v2:
         
         # on-the-fly (linear) interpolation of forcing
         aa = jnp.mod(itm,nsubsteps)/nsubsteps
-        itsup = lax.select(it+1>=self.nt, -1, it+1) 
-        TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
+        itsup = lax.select(it+1>=self.nt, -1, it) 
+        TA = (1-aa)*self.TA[it-1] + aa*self.TA[itsup]
         
         arg2 = itm, K, TA, U
         # loop on layers
@@ -1343,7 +1334,7 @@ class jUnstek1D_v2:
             
             # lax.scan version
             X0 = K, U
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt))
             _, U = final
             
         self.Ur_traj = U

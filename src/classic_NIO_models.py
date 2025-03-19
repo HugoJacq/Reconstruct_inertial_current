@@ -190,14 +190,23 @@ class classic_slab1D:
         - U: updated velocity at next time step 
         """
         it, K, U = X0
+        
+        
+        
         nsubsteps = self.dt_forcing // self.dt
         itm = it*nsubsteps + inner_t
         
         # on-the-fly (linear) interpolation of forcing
         aa = jnp.mod(itm,nsubsteps)/nsubsteps
-        itsup = lax.select(it+1>=self.nt, -1, it+1) 
-        TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
-        
+        itsup = lax.select(it+1>=self.nt, -1, it) 
+        TA = (1-aa)*self.TA[it-1] + aa*self.TA[itsup]
+                    
+        # def cond_print(it):
+        #     jax.debug.print('it,itf, TA, {}, {}, {}',itm,it,TA)
+            
+        # jax.lax.cond(it==0, cond_print, lambda x:None, it)    
+            
+            
         arg2 = itm, K, TA, U
         # loop on layers
         _, _, _, U = lax.cond( self.nl == 1,    # condition, only 1 layer ?
@@ -213,8 +222,8 @@ class classic_slab1D:
         outer loop (forcing time step, 1 hour)
         """
         K, U = arg0
-        Uold = lax.select( it>0, U[:,it-1], U[:,0])
-        
+        #Uold = lax.select( it>0, U[:,it-1], U[:,0])
+        Uold = U[:,it-1]
         X0 = it, K, Uold
         final, _ = lax.scan(self.__one_step, X0, jnp.arange(0, self.dt_forcing//self.dt))
         _, _, Unext = final
@@ -243,7 +252,7 @@ class classic_slab1D:
             warnings.simplefilter('ignore') # dont show overflow results
             # lax.scan version
             X0 = K, U
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt)) #
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt)) #
             _, U = final
             
         self.Ur_traj = U
@@ -457,9 +466,9 @@ class classic_slab1D_Kt:
         
         # on-the-fly (linear) interpolation of forcing
         aa = jnp.mod(itm,nsubsteps)/nsubsteps
-        itsup = lax.select(it+1>=self.nt, -1, it+1)         # if itsup>=self.nt: itsup=-1, else: it+1
-        TA = (1-aa)*self.TA[it] + aa*self.TA[itsup] # TA is stress at current model time step
-        Ktnow = (1-aa)*Kt[it] + aa*Kt[itsup]
+        itsup = lax.select(it+1>=self.nt, -1, it) 
+        TA = (1-aa)*self.TA[it-1] + aa*self.TA[itsup]
+        Ktnow = (1-aa)*Kt[it-1] + aa*Kt[itsup]
         
         arg2 = itm, Ktnow, TA, U
         # loop on layers
@@ -468,10 +477,7 @@ class classic_slab1D_Kt:
                             self.__Nlayer,      # else, loop on layers
                             arg2)   
         X0 = it, Kt, U        
-        return X0, X0
-    
-    # https://docs.jax.dev/en/latest/notebooks/autodiff_remat.html#fundamentals-of-jax-checkpoint
-    
+        return X0, X0    
     
     def __step(self, it, arg0):
         """
@@ -538,7 +544,7 @@ class classic_slab1D_Kt:
             # lax.scan version
             X0 = Kt, U
             #final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,3 )) #self.nt))
-            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(0,self.nt))
+            final, _ = lax.scan(self.__step_for_scan, X0, jnp.arange(1,self.nt))
             _, U = final
             
         self.Ur_traj = U
@@ -546,7 +552,6 @@ class classic_slab1D_Kt:
         
         return pk, U
     
-
 class classic_slab1D_eqx(eqx.Module):
     """
      Originaly from Pollard (1970), implemented as:
@@ -569,20 +574,27 @@ class classic_slab1D_eqx(eqx.Module):
     fc : jnp.array
     dt_forcing : np.float64
     nl : np.int32
-    AD_mode : str
+    AD_mode : str = eqx.static_field()
     
-    @eqx.filter_jit
-    def __call__(self, t0, t1, dt, SaveAt = None):
+    
+    @eqx.filter_jit()
+    # @partial(jit, static_argnames=['save_traj_at'])
+    def __call__(self, call_args, save_traj_at:int):
+        t0, t1, dt = call_args
         
         # time saved
         # if type(SaveAt)==list:
         #     if len(SaveAt)>=0:
         #         ns = len(SaveAt)
         # elif type(SaveAt)==np.float64 or type(SaveAt)==np.int32:
-        if SaveAt is None:
-            ns = np.int32((t1-t0)//self.dt_forcing)
+        if save_traj_at<=0:
+            dt_out = self.dt_forcing
         else:
-            ns = np.int32((t1-t0)//SaveAt)
+            dt_out = save_traj_at
+
+        ns = len(self.TA) #jnp.floor_divide((t1-t0),dt_out)
+        nsubsteps = jnp.floor_divide(self.dt_forcing,dt) # == self.dt_forcing//dt
+        
      
         # initialization
         U = jnp.zeros( (self.nl, ns), dtype='complex') + (self.U0+1j*self.V0)
@@ -611,43 +623,6 @@ class classic_slab1D_eqx(eqx.Module):
                                             - K[-1]*U[ik] ) )
             return it, K, TA, U
             
-        def __Nlayer_midlayers_for_scan(X0,ik): 
-            it, K, U = X0
-            U = U.at[ik].set( U[ik] + 
-                                    dt*( 
-                                        - 1j*self.fc*U[ik] 
-                                        - K[ik+1]*(K[ik-1]-K[ik])
-                                        - K[-1]*U[ik] ) )
-            X = it, K, U
-            return X, X
-            
-        def __Nlayer(arg2):
-            """
-            1 time iteration of unstek model when N layer
-            """    
-
-            it, K, TA,  U = arg2
-            
-            # surface
-            ik = 0
-            U = U.at[ik].set( U[ik] + 
-                                    dt*( 
-                                        - 1j*self.fc*U[ik] 
-                                        + K[ik]*(TA-K[ik+1])
-                                        - K[-1]*U[ik] ) )
-            # bottom
-            ik = -1
-            U = U.at[ik].set(  U[ik] + 
-                                    dt*( 
-                                        - 1j*self.fc*U[ik] 
-                                        + K[ik-1]*K[ik-2]
-                                        - K[-1]*U[ik] ) )
-            # in between
-            X0 = it, K, U
-            final, _ = lax.scan(__Nlayer_midlayers_for_scan, X0, jnp.arange(1,self.nl-1) )
-            _, _, U = final
-            return it, K, TA, U    
-        
         def __one_step(X0, inner_t):
             """
             1 model time step forward (inner loop)
@@ -662,47 +637,66 @@ class classic_slab1D_eqx(eqx.Module):
             - U: updated velocity at next time step 
             """
             it, K, U = X0
-            nsubsteps = self.dt_forcing // dt
-            itm = it*nsubsteps + inner_t
-            
+    
             # on-the-fly (linear) interpolation of forcing
+            itm = it*nsubsteps + inner_t
+            itf = jnp.array(it//nsubsteps, int)
             aa = jnp.mod(itm,nsubsteps)/nsubsteps
-            itsup = lax.select(it+1>=len(self.TA), -1, it+1) 
-            TA = (1-aa)*self.TA[it] + aa*self.TA[itsup]
-            # current_time = itm*dt
-            # TA = TA_t(current_time)
-            # jax.debug.print('current time = {}',current_time)
+            itsup = jnp.where(itf+1>=len(self.TA), -1, itf) 
+            TA = (1-aa)*self.TA[itf-1] + aa*self.TA[itsup]
+            def cond_print(it):
+                jax.debug.print('it,itm,itf, {}, {}, {}',it, itm,itf)
+            
+            cond = jnp.logical_and(it==0,itm<=10)
+            jax.lax.cond(cond, cond_print, lambda x:None, it)
+            
             arg2 = itm, K, TA, U
-            # loop on layers
-            _, _, _, U = lax.cond( self.nl == 1,    # condition, only 1 layer ?
-                                __Onelayer,         # if 1 layer, ik=0
-                                __Nlayer,           # else, loop on layers
-                                arg2)   
-            X0 = it, K, U        
+            _, _, _, U = __Onelayer(arg2)
+            X0 = it, K, U  
+                  
             return X0, X0
      
         
-        def __step(it, arg0):
+        # def __step(it, arg0):
+        #     """
+        #     outer loop
+        #     """
+        #     K, U = arg0
+        #     Uold = lax.select( it>0, U[:,it-1], U[:,0])
+            
+        #     X0 = it, K, Uold
+        #     final, _ = lax.scan(__one_step, X0, jnp.arange(0, nsubsteps))
+        #     _, _, Unext = final
+        #     U = U.at[:,it].set(Unext)
+
+        #     return K, U
+        def __step(arg0):
             """
-            outer loop (forcing time step, 1 hour)
+            outer loop
             """
-            K, U = arg0
+            it, K, U = arg0
             Uold = lax.select( it>0, U[:,it-1], U[:,0])
             
             X0 = it, K, Uold
-            final, _ = lax.scan(__one_step, X0, jnp.arange(0, self.dt_forcing//dt))
+            final, _ = lax.scan(__one_step, X0, jnp.arange(0, nsubsteps))
             _, _, Unext = final
             U = U.at[:,it].set(Unext)
-
-            return K, U
-    
+            it = it +1
+            return it, K, U
+        
+        
         # time loop
-        arg0 = K, U
-        #U = lax.scan(self.__step_for_scan, X0, length=ns) #jnp.arange(0,ns))      
-        _, U = lax.fori_loop(0, ns, __step, arg0)
+        # arg0 = K, U
+        # _, U = lax.fori_loop(0, ns, __step, arg0)
         
-        
-        return U
+        it=0
+        arg0 = it, K, U
+        def cond(arg):
+            it, _, _ = arg
+            return it<ns
+                
+        _, _, U = lax.while_loop(cond, __step,arg0)        
+        return jnp.real(U), jnp.imag(U)
         
     def K_transform(self, pk, order=0, function='exp'):
         """
@@ -737,20 +731,25 @@ class classic_slab1D_eqx_difx(eqx.Module):
     AD_mode : str
     
     @eqx.filter_jit
-    def __call__(self, t0, t1, dt, SaveAt = None):
-
+    def __call__(self, call_args, save_traj_at = None):
+        t0, t1, dt = call_args
+        nsubsteps = self.dt_forcing // dt
         def vector_field(t, C, args):
             U,V = C
             fc, K, TAx, TAy = args
             
             # on the fly interpolation
-            nsubsteps = self.dt_forcing // dt
             it = jnp.array(t//dt, int)
             itf = jnp.array(it//nsubsteps, int)
+            
             aa = jnp.mod(it,nsubsteps)/nsubsteps
             itsup = lax.select(itf+1>=len(TAx), -1, itf+1) 
             TAx = (1-aa)*TAx[itf] + aa*TAx[itsup]
             TAy = (1-aa)*TAy[itf] + aa*TAy[itsup]
+            # def cond_print(it):
+            #     jax.debug.print('it,itf, TA, {}, {}, {}',it,itf,(TAx,TAy))
+            
+            # jax.lax.cond(it<=10, cond_print, lambda x:None, it)
             
             # physic
             d_U = fc*V + K[0]*TAx - K[1]*U
@@ -766,18 +765,18 @@ class classic_slab1D_eqx_difx(eqx.Module):
             adjoint = diffrax.ForwardMode()
         else:
             adjoint = diffrax.RecursiveCheckpointAdjoint(checkpoints=10)
-    
-        #y0 = self.U0,self.V0
-        y0 = 0.0,0.0
+
+        y0 = 0.0,0.0 # self.U0,self.V0
         # control
         K = jnp.exp( jnp.asarray(self.pk) )
   
         args = self.fc, K, self.TAx, self.TAy
         
-        if SaveAt is None:
+        if save_traj_at is None:
             saveat = diffrax.SaveAt(steps=True)
         else:
-            saveat = diffrax.SaveAt(ts=jnp.arange(t0,t1,SaveAt))
+            saveat = diffrax.SaveAt(ts=jnp.arange(t0,t1,save_traj_at)) # slower than above (no idea why)
+            #saveat = diffrax.SaveAt(ts=save_traj_at)
         
         maxstep = int((t1-t0)//dt) +1 
         
@@ -787,29 +786,10 @@ class classic_slab1D_eqx_difx(eqx.Module):
                            t1=t1, 
                            y0=y0, 
                            args=args, 
-                           dt0=dt, 
+                           dt0=dt, #dt, None
                            saveat=saveat,
+                           #stepsize_controller=diffrax.StepTo(jnp.arange(t0, t1+dt, dt)),
                            adjoint=adjoint,
-                           max_steps=maxstep) # here this is needed to be able to forward AD
+                           max_steps=maxstep,
+                           made_jump=False) # here this is needed to be able to forward AD
     
-    # def ODE(self):
-        
-    #     def vector_field(t, C, args):
-    #         # on the fly interpolation
-    #         nsubsteps = self.dt_forcing // self.dt
-    #         itf = jnp.array(it//dt//nsubsteps, int)
-
-    #         aa = jnp.mod(it,nsubsteps)/nsubsteps
-    #         itsup = lax.select(itf+1>=self.nt, -1, itf+1) 
-    #         TA = (1-aa)*self.TA[itf] + aa*self.TA[itsup]
-            
-            
-            
-    #         U,V = C
-    #         fc, K, TAx, TAy = args
-    #         d_U = fc*V + K[0]*TAx(t) - K[1]*U
-    #         d_V = -fc*U + K[0]*TAy - K[1]*V
-    #         d_y = d_U,d_V
-    #         return d_y
-            
-    #     return ODETerm(vector_field)
