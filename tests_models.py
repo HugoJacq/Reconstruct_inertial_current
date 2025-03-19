@@ -99,7 +99,7 @@ maxiter             = 100       # max number of iteration
 TEST_JUNSTEK1D              = False     # implementing junstek1D
 TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
-TEST_CLASSIC_SLAB           = True     # implementing classic_slab1D
+TEST_CLASSIC_SLAB           = False     # implementing classic_slab1D
 TEST_CLASSIC_SLAB_KT        = False     # implementing classic_slab1D_Kt
 TEST_CLASSIC_SLAB_EQX       = False      # 
 TEST_CLASSIC_SLAB_EQX_DIFX  = True
@@ -663,29 +663,29 @@ if __name__ == "__main__":
         var_dfx = inv.Variational_diffrax(mymodel,observations1D)
         dynamic_model, static_model = var_dfx.my_partition(mymodel)
         
-        time1 = clock.time()
-        C = mymodel(call_args)
-        print('time, forward model (with compile)',clock.time()-time1)
+        # time1 = clock.time()
+        # C = mymodel(call_args)
+        # print('time, forward model (with compile)',clock.time()-time1)
         
-        time2 = clock.time()
-        C = mymodel(call_args)
-        print('time, forward model (no compile)',clock.time()-time2)
+        # time2 = clock.time()
+        # C = mymodel(call_args)
+        # print('time, forward model (no compile)',clock.time()-time2)
         
-        time3 = clock.time()
-        J = var_dfx.cost(dynamic_model, static_model, call_args)
-        print('time, cost (with compile)',clock.time()-time3)
+        # time3 = clock.time()
+        # J = var_dfx.cost(dynamic_model, static_model, call_args)
+        # print('time, cost (with compile)',clock.time()-time3)
     
-        time4 = clock.time()
-        J = var_dfx.cost(dynamic_model, static_model, call_args)
-        print('time, cost (no compile)',clock.time()-time4)
+        # time4 = clock.time()
+        # J = var_dfx.cost(dynamic_model, static_model, call_args)
+        # print('time, cost (no compile)',clock.time()-time4)
 
-        time5 = clock.time()
-        J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
-        print('time, gradcost (with compile)',clock.time()-time5)
+        # time5 = clock.time()
+        # J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        # print('time, gradcost (with compile)',clock.time()-time5)
 
-        time6 = clock.time()
-        J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
-        print('time, gradcost (no compile)',clock.time()-time6)
+        # time6 = clock.time()
+        # J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        # print('time, gradcost (no compile)',clock.time()-time6)
         
         
         

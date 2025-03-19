@@ -329,7 +329,6 @@ class Variational_diffrax:
         self.is_difx = is_difx
 
     def loss_fn(self, obs, sol):
-        #print(sol[0].shape,obs[0].shape)
         return jnp.mean( (sol[0]-obs[0])**2 + (sol[1]-obs[1])**2 )
     
     def cost(self, dynamic_model, static_model, call_args):
@@ -388,90 +387,74 @@ class Variational_diffrax:
                 return value, value_grad, model, opt_state
             
         elif opti=='lbfgs':
-            if mymodel.AD_mode=='F':
-                raise Exception('Error: LBFGS in optax uses linesearch, that itself uses value_and_grad. You have chosen a forward automatic differentiation, exiting ...')
+            if mymodel.AD_mode=='B':
+                print('temporary ok')                
+                
+                #raise Exception('Error: LBFGS in optax uses linesearch, that itself uses value_and_grad. You have chosen a forward automatic differentiation, exiting ...')
             else:
                 """
                 The rest of this minimizer, in reverse mode, is still WIP
                 """
                 
+                linesearch = optax.scale_by_backtracking_linesearch(max_backtracking_steps=15,decrease_factor=0.9)
+                solver = optax.scale_by_lbfgs() 
+                solver = optax.chain( optax.scale_by_lbfgs(), linesearch)
+                # Compare with or without linesearch by commenting this line
                 
-                solver = optax.scale_by_lbfgs() # lbfgs()
-                                    # max_history_size=10,           # Number of previous gradients to store (adjust as needed)
-                                    # min_step_size=1e-6,             # Minimum step size
-                                    # max_step_size=1.0,              # Maximum step size
-                                    # line_search_factor=0.5,         # Factor for backtracking line search
-                                    # max_line_search_iterations=20)  # Maximum number of line search iterations
                         
                 #opt_state = opt.init(value_and_grad_fn, mymodel.pk)
                 opt_state = solver.init(mymodel.pk)
                 
                 
-                
+            
                 def value_and_grad_fn(params): # L-BFGS expects a function that returns both value and gradient
                         dynamic_model, static_model = self.my_partition(mymodel)
                         new_dynamic_model = eqx.tree_at(lambda m: m.pk, dynamic_model, params) # replace new pk
-                        print(static_model)
                         value, grad = self.grad_cost(new_dynamic_model, static_model, call_args)
                         return value, grad.pk
+                
                 def cost_fn(params):
                     value, _ = value_and_grad_fn(params)
                     return value
+                                
+                def gstop_criterion(grad, gtol=1e-5):
+                    return jnp.amax(jnp.abs(grad))>=gtol
                 
                 # optax.scale_by_zoom_linesearch() IS USING VALUE_AND_GRAD (SO REVERSE AD) !!!
                 # l.1583 in optax/src/linesearch.py
+                # lets use another linesearch : scale_by_backtracking_linesearch
                 @eqx.filter_jit
                 def step_minimize(carry):
-                    model, opt_state = carry
+                    value, grad, model, opt_state = carry
                     params = model.pk
                     
                     #dynamic_model, static_model = self.my_partition(model)
                     value, grad = value_and_grad_fn(params)
                     
-                    updates, opt_state = solver.update(grad, opt_state, params) 
+                    updates, opt_state = solver.update(grad, opt_state, params,
+                                                       value=value, grad=grad, value_fn=cost_fn) 
                     
                     params = optax.apply_updates(params, updates)
-                    
-                    print(opt_state)
-                    
-                    if verbose:
-                        # Extract the current iteration number
-                        iter_num = otu.tree_get(opt_state, 'count')
-                        err = otu.tree_l2_norm(grad)
-                        print(f"it: {iter_num}, J: {value}, err: {err}, pk: {params}")
-                
+                                
                     # Apply updates to model
                     model = eqx.tree_at(lambda m: m.pk, model, updates)
-                    # Compute value and gradient at the new point for stopping criterion
-                    # value, grad = self.grad_cost(eqx.tree_at(lambda m: m.pk, 
-                    #                                          dynamic_model, updates),
-                    #                             static_model, 
-                    #                             call_args)
                     return value, grad, model, opt_state
 
-                def stop_criterion(prev_cost, next_cost, tol):
-                    return jnp.abs(next_cost-prev_cost) >= tol
                 
-                def gstop_criterion(grad, gtol=1e-5):
-                    return jnp.amax(jnp.abs(grad))>=gtol
                     
                 
 
                 # initialisation
-                
-                prev_cost, next_cost = 0,1
                 it = 0
-                grad = jnp.ones(len(mymodel.pk))
+                value, grad = value_and_grad_fn(mymodel.pk)
                 
                 # loop
                 #while it<itmax and stop_criterion(prev_cost, next_cost, tol=tol): # #for it in range(itmax):
                 while it<itmax and gstop_criterion(grad, gtol): # #for it in range(itmax):
-                    carry = mymodel, opt_state
+                    carry = value, grad, mymodel, opt_state
                     value, grad, mymodel, opt_state = step_minimize(carry) #mymodel, solver, opt_state, call_args)
-                    #prev_cost = next_cost
-                    #next_cost = value
                     if verbose:
-                        print("it, J, K :",it, value, mymodel.pk) # value, mymodel
+                        print("it, J, K, |dJ|:",it, value, mymodel.pk, jnp.amax(grad)) # value, mymodel
                     it += 1
                     
                 print('Final pk is:',mymodel.pk)
