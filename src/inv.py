@@ -12,6 +12,11 @@ from typing import NamedTuple
 import chex
 import time as clock
 import jaxopt
+import scipy
+
+import equinox as eqx
+import jax.tree_util as jtu
+import optax
 
 from src import constants
 
@@ -82,10 +87,7 @@ class Variational:
         #self.run_opt_jit = jit(self.run_opt)   
         #self.my_opt_jit = jit(self.my_opt)
 
-
-    def loss(obs,sol):
-        return 
-  
+ 
     # NO JAX
     def nojax_cost(self, pk):
         """
@@ -150,7 +152,8 @@ class Variational:
         B = jnp.zeros( self.Uo.shape, dtype='float64')
         A = A.at[:].set(U[::self.obs_period//self.dt_forcing])
         B = B.at[:].set(V[::self.obs_period//self.dt_forcing])
-        J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
+        #J = 0.5 * jnp.sum( ((self.observations.Uo - A)*self.Ri)**2 + ((self.observations.Vo - B)*self.Ri)**2 )
+        J = jnp.mean( ((self.observations.Uo - A))**2 + ((self.observations.Vo - B))**2 )
         return J 
  
     def jax_grad_cost(self, pk):        
@@ -315,4 +318,198 @@ class Variational:
         
         return res
     
+class Variational_diffrax:
+    """
+    """
+    def __init__(self, model, observations, is_difx=True):
+        self.observations = observations
+        self.obs_period = observations.obs_period
+        self.dt_forcing = model.dt_forcing
+        self.model = model
+        self.is_difx = is_difx
+
+    def loss_fn(self, obs, sol):
+        #print(sol[0].shape,obs[0].shape)
+        return jnp.mean( (sol[0]-obs[0])**2 + (sol[1]-obs[1])**2 )
     
+    def cost(self, dynamic_model, static_model, call_args):
+        mymodel = eqx.combine(dynamic_model, static_model)
+        dtime_obs = self.observations.obs_period
+        obs = self.observations.get_obs()
+        if self.is_difx:
+            sol = mymodel(call_args, save_traj_at=dtime_obs).ys # use diffrax and equinox
+        else:
+            sol = mymodel(call_args, save_traj_at=dtime_obs) # only equinox
+        return self.loss_fn(sol, obs)
+        
+   
+        
+    def my_partition(self, mymodel):
+        filter_spec = jtu.tree_map(lambda arr: False, mymodel) # keep nothing
+        filter_spec = eqx.tree_at( lambda tree: tree.pk, filter_spec, replace=True) # keep only pk
+        return eqx.partition(mymodel, filter_spec)          
+    
+    @eqx.filter_jit
+    def grad_cost(self, dynamic_model, static_model, call_args):
+        def cost_for_grad(dynamic_model, static_model, call_args):
+            y = self.cost(dynamic_model, static_model, call_args)
+            if static_model.AD_mode=='F':
+                return y,y # <- trick to have a similar behavior than value_and_grad (but here returns grad, value)
+            else:
+                return y
+        
+        if self.model.AD_mode=='F':
+            val1, val2 =  eqx.filter_jacfwd(cost_for_grad, has_aux=True)(dynamic_model, static_model, call_args)
+            return val2, val1
+        else:
+            val1, val2 = eqx.filter_value_and_grad(cost_for_grad)(dynamic_model, static_model, call_args)
+            return val1, val2
+    
+    
+    
+
+    def my_minimizer(self, opti, mymodel, itmax, call_args, gtol=1e-5, verbose=False):
+        """
+        wrapper of optax minimizer, updating 'model' as the loop goes
+        """
+        
+        
+        if opti=='adam':
+            solver = optax.adam(1e-2)
+            opt_state = solver.init(mymodel)
+            
+            @eqx.filter_jit
+            def step_minimize(model, opt, opt_state, call_args):
+                dynamic_model, static_model = self.my_partition(mymodel)
+                value, grad = self.grad_cost(dynamic_model, static_model, call_args)
+                value_grad = grad.pk 
+                updates, opt_state = opt.update(grad, opt_state)
+                model = eqx.apply_updates(model, updates)
+                return value, value_grad, model, opt_state
+            
+        elif opti=='lbfgs':
+            if mymodel.AD_mode=='F':
+                raise Exception('Error: LBFGS in optax uses linesearch, that itself uses value_and_grad. You have chosen a forward automatic differentiation, exiting ...')
+            else:
+                """
+                The rest of this minimizer, in reverse mode, is still WIP
+                """
+                
+                
+                solver = optax.scale_by_lbfgs() # lbfgs()
+                                    # max_history_size=10,           # Number of previous gradients to store (adjust as needed)
+                                    # min_step_size=1e-6,             # Minimum step size
+                                    # max_step_size=1.0,              # Maximum step size
+                                    # line_search_factor=0.5,         # Factor for backtracking line search
+                                    # max_line_search_iterations=20)  # Maximum number of line search iterations
+                        
+                #opt_state = opt.init(value_and_grad_fn, mymodel.pk)
+                opt_state = solver.init(mymodel.pk)
+                
+                
+                
+                def value_and_grad_fn(params): # L-BFGS expects a function that returns both value and gradient
+                        dynamic_model, static_model = self.my_partition(mymodel)
+                        new_dynamic_model = eqx.tree_at(lambda m: m.pk, dynamic_model, params) # replace new pk
+                        print(static_model)
+                        value, grad = self.grad_cost(new_dynamic_model, static_model, call_args)
+                        return value, grad.pk
+                def cost_fn(params):
+                    value, _ = value_and_grad_fn(params)
+                    return value
+                
+                # optax.scale_by_zoom_linesearch() IS USING VALUE_AND_GRAD (SO REVERSE AD) !!!
+                # l.1583 in optax/src/linesearch.py
+                @eqx.filter_jit
+                def step_minimize(carry):
+                    model, opt_state = carry
+                    params = model.pk
+                    
+                    #dynamic_model, static_model = self.my_partition(model)
+                    value, grad = value_and_grad_fn(params)
+                    
+                    updates, opt_state = solver.update(grad, opt_state, params) 
+                    
+                    params = optax.apply_updates(params, updates)
+                    
+                    print(opt_state)
+                    
+                    if verbose:
+                        # Extract the current iteration number
+                        iter_num = otu.tree_get(opt_state, 'count')
+                        err = otu.tree_l2_norm(grad)
+                        print(f"it: {iter_num}, J: {value}, err: {err}, pk: {params}")
+                
+                    # Apply updates to model
+                    model = eqx.tree_at(lambda m: m.pk, model, updates)
+                    # Compute value and gradient at the new point for stopping criterion
+                    # value, grad = self.grad_cost(eqx.tree_at(lambda m: m.pk, 
+                    #                                          dynamic_model, updates),
+                    #                             static_model, 
+                    #                             call_args)
+                    return value, grad, model, opt_state
+
+                def stop_criterion(prev_cost, next_cost, tol):
+                    return jnp.abs(next_cost-prev_cost) >= tol
+                
+                def gstop_criterion(grad, gtol=1e-5):
+                    return jnp.amax(jnp.abs(grad))>=gtol
+                    
+                
+
+                # initialisation
+                
+                prev_cost, next_cost = 0,1
+                it = 0
+                grad = jnp.ones(len(mymodel.pk))
+                
+                # loop
+                #while it<itmax and stop_criterion(prev_cost, next_cost, tol=tol): # #for it in range(itmax):
+                while it<itmax and gstop_criterion(grad, gtol): # #for it in range(itmax):
+                    carry = mymodel, opt_state
+                    value, grad, mymodel, opt_state = step_minimize(carry) #mymodel, solver, opt_state, call_args)
+                    #prev_cost = next_cost
+                    #next_cost = value
+                    if verbose:
+                        print("it, J, K :",it, value, mymodel.pk) # value, mymodel
+                    it += 1
+                    
+                print('Final pk is:',mymodel.pk)
+                return mymodel
+    
+    def scipy_lbfgs_wrapper(self, mymodel, maxiter, call_args, verbose=False):
+        
+        def value_and_grad_for_scipy(params): # L-BFGS expects a function that returns both value and gradient
+                    dynamic_model, static_model = self.my_partition(mymodel)
+                    new_dynamic_model = eqx.tree_at(lambda m: m.pk, dynamic_model, params) # replace new pk
+                    value, grad = self.grad_cost(new_dynamic_model, static_model, call_args)
+                    return value, grad.pk
+            
+
+        vector_k = mymodel.pk
+        print('intial pk',vector_k)
+        
+        
+        res = scipy.optimize.minimize(value_and_grad_for_scipy, 
+                                            vector_k,
+                                            options={'maxiter':maxiter},
+                                            method='L-BFGS-B',
+                                            jac=True)
+        
+        new_k = jnp.asarray(res['x'])
+        mymodel = eqx.tree_at( lambda tree:tree.pk, mymodel, new_k)
+
+        if verbose:
+            dynamic_model, static_model = self.my_partition(mymodel)
+            value, gradtree = self.grad_cost(dynamic_model, static_model, call_args)
+            grad = gradtree.pk
+            print('final cost, grad')
+            print(value, grad)
+            print(' vector K solution ('+str(res.nit)+' iterations)',res['x'])
+            print(' cost function value with K solution:',value)
+        
+        return mymodel
+        
+        
+        
+        

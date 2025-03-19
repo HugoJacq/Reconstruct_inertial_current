@@ -30,6 +30,7 @@ from matplotlib import ticker as mticker
 #import jax.numpy as jnp
 import jax
 import jax.numpy as jnp
+import optax
 jax.config.update("jax_enable_x64", True)
 
 # jax.config.update('jax_platform_name', 'cpu')
@@ -91,7 +92,7 @@ dT                  = 3*86400   # how much vectork K changes with time, basis c
 dt_forcing          = 3600      # forcing timestep
     
 # MINIMIZATION
-MINIMIZE            = False      # switch to do the minimisation process
+MINIMIZE            = True      # switch to do the minimisation process
 maxiter             = 100       # max number of iteration
 
 # tests
@@ -100,7 +101,7 @@ TEST_JUNSTEK1D_KT           = False     # implementing junstek1D_kt
 TEST_JUNSTEK1D_KT_SPATIAL   = False     # implementing jUnstek1D_spatial
 TEST_CLASSIC_SLAB           = True     # implementing classic_slab1D
 TEST_CLASSIC_SLAB_KT        = False     # implementing classic_slab1D_Kt
-TEST_CLASSIC_SLAB_EQX       = True      # 
+TEST_CLASSIC_SLAB_EQX       = False      # 
 TEST_CLASSIC_SLAB_EQX_DIFX  = True
 # regrid data
 path_regrid = './data_regrid/'
@@ -443,6 +444,7 @@ if __name__ == "__main__":
         print('time, gradcost (no compile)',clock.time()-t6)
     
         if MINIMIZE:
+            t7 = clock.time()
             print('-> minimizing ...')
             res = opt.minimize(var.cost, vector_k,
                             method='L-BFGS-B',
@@ -450,10 +452,14 @@ if __name__ == "__main__":
                             options={'disp': True, 'maxiter': maxiter})
                 
             inv.print_info(var.cost,res)
-            vector_k = res['x']
-            _, Ca = model.do_forward_jit(vector_k)
+            #print('terminatation cause:',res.message)
+            new_k = res['x']
+            _, Ca = model.do_forward_jit(new_k)
             Ua, Va = jnp.real(Ca)[0], jnp.imag(Ca)[0]
-    
+            print('time, minimize',clock.time()-t7)
+        else:
+            new_k = vector_k
+            
         # PLOT
         U = forcing1D.data.U.values
         Uo, Vo = observations1D.get_obs()
@@ -466,12 +472,13 @@ if __name__ == "__main__":
         ax.plot(forcing1D.time/86400, Ua, c='g', label='slab')
         ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
         ax.set_ylim([-0.3,0.4])
-        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(vector_k),4)))
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(var.cost(new_k),4)))
         ax.set_xlabel('Time (days)')
         ax.set_ylabel('Ageo zonal current (m/s)')
         ax.legend(loc=1)
+        #ax.set_xlim([0,1])
         fig.savefig(path_save_png+'JAX_test_classic_slab1D_'+str(Nl)+'layers'+namesave_loc+'.png')
-        
+
     if TEST_CLASSIC_SLAB_KT:
         print('* test classic_slab1D_kt, N='+str(Nl)+' layers')
         model = classic_NIO_models.classic_slab1D_Kt(dt, Nl, forcing1D, dT)
@@ -556,19 +563,82 @@ if __name__ == "__main__":
         
         t0 = 0.
         t1 = 28*86400. #
+        call_args = t0, t1, dt
         dt_forcing=3600.
         dt_saveat = dt_forcing #60.
         
         mymodel = classic_NIO_models.classic_slab1D_eqx(U0, V0, pk, TA, fc, dt_forcing, Nl, AD_mode)
+        var_dfx = inv.Variational_diffrax(mymodel,observations1D, is_difx=False)
+        dynamic_model, static_model = var_dfx.my_partition(mymodel)
         
-        time1 = clock.time()
-        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
-        print('time, forward model (with compile)',clock.time()-time1)
+        # time1 = clock.time()
+        # C = mymodel(call_args)
+        # print('time, forward model (with compile)',clock.time()-time1)
         
-        time2 = clock.time()
-        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
-        print('time, forward model (no compile)',clock.time()-time2)
+        # time2 = clock.time()
+        # C = mymodel(call_args)
+        # print('time, forward model (no compile)',clock.time()-time2)
         
+        # time3 = clock.time()
+        # J = var_dfx.cost(dynamic_model, static_model, call_args)
+        # print('time, cost (with compile)',clock.time()-time3)
+    
+        # time4 = clock.time()
+        # J = var_dfx.cost(dynamic_model, static_model, call_args)
+        # print('time, cost (no compile)',clock.time()-time4)
+
+        # time5 = clock.time()
+        # J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        # print('time, gradcost (with compile)',clock.time()-time5)
+
+        # time6 = clock.time()
+        # J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        # print('time, gradcost (no compile)',clock.time()-time6)
+        
+        
+        
+        if MINIMIZE: 
+            print('-> minimizing ...')
+            if False:
+                opti = 'lbfgs' # 'adam'
+                mymodel = var_dfx.my_minimizer(opti=opti, 
+                                            mymodel=mymodel, 
+                                            itmax=maxiter, 
+                                            call_args=call_args,
+                                            gtol=1e-5, 
+                                            verbose=True)
+                # Note : adam works ok, but many iterations
+                # lbfgs doesnt work in forward AD
+            else:
+                t7 = clock.time()
+                mymodel = var_dfx.scipy_lbfgs_wrapper(mymodel, maxiter, call_args, verbose=True)   
+                print('time, minimize',clock.time()-t7)
+        C = mymodel(call_args, save_traj_at=dt_forcing)
+        print(C[0].shape)
+        Ua = mymodel(call_args, save_traj_at=dt_forcing)[0][0]
+                
+            
+        # PLOT
+        U = forcing1D.data.U.values
+        Uo, Vo = observations1D.get_obs()
+        
+        RMSE = tools.score_RMSE(Ua, U) 
+        dynamic_model, static_model = var_dfx.my_partition(mymodel)
+        final_cost = var_dfx.cost(dynamic_model, static_model, call_args)
+        print('RMSE is',RMSE)
+        # PLOT trajectory
+        fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
+        ax.plot(forcing1D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing1D.time/86400, Ua, c='g', label='slab')
+        ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
+        ax.set_ylim([-0.3,0.4])
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(final_cost,4)))
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Ageo zonal current (m/s)')
+        ax.legend(loc=1)
+        fig.savefig(path_save_png+'JAX_test_classic_slab1D_eqx_'+str(Nl)+'layers'+namesave_loc+'.png')
+              
+                
     if TEST_CLASSIC_SLAB_EQX_DIFX:
         print('* test classic_slab1D_eqx_dfx, N='+str(Nl)+' layers')
         
@@ -585,19 +655,81 @@ if __name__ == "__main__":
         t0 = 0.
         t1 = 28*86400. #
         dt_forcing=3600.
+        call_args = t0, t1, dt
         dt_saveat = dt_forcing #60.
+        timeforcing = forcing1D.time
         
         mymodel = classic_NIO_models.classic_slab1D_eqx_difx(pk, TAx, TAy, fc, dt_forcing, Nl, AD_mode)
+        var_dfx = inv.Variational_diffrax(mymodel,observations1D)
+        dynamic_model, static_model = var_dfx.my_partition(mymodel)
         
         time1 = clock.time()
-        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        C = mymodel(call_args)
         print('time, forward model (with compile)',clock.time()-time1)
         
         time2 = clock.time()
-        C = mymodel(t0,t1,dt,SaveAt=dt_saveat)
+        C = mymodel(call_args)
         print('time, forward model (no compile)',clock.time()-time2)
         
+        time3 = clock.time()
+        J = var_dfx.cost(dynamic_model, static_model, call_args)
+        print('time, cost (with compile)',clock.time()-time3)
+    
+        time4 = clock.time()
+        J = var_dfx.cost(dynamic_model, static_model, call_args)
+        print('time, cost (no compile)',clock.time()-time4)
+
+        time5 = clock.time()
+        J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        print('time, gradcost (with compile)',clock.time()-time5)
+
+        time6 = clock.time()
+        J, dJ = var_dfx.grad_cost(dynamic_model, static_model, call_args)
+        print('time, gradcost (no compile)',clock.time()-time6)
         
+        
+        
+        if MINIMIZE:
+            print('-> minimizing ...')
+            if False:
+                opti = 'lbfgs' # 'adam'
+                mymodel = var_dfx.my_minimizer(opti=opti, 
+                                            mymodel=mymodel, 
+                                            itmax=maxiter, 
+                                            call_args=call_args,
+                                            gtol=1e-5, 
+                                            verbose=True)
+                # Note : adam works ok, but many iterations
+                # lbfgs doesnt work in forward AD
+            else:
+                t7 = clock.time()
+                mymodel = var_dfx.scipy_lbfgs_wrapper(mymodel, maxiter, call_args, verbose=True)   
+                print('time, minimize',clock.time()-t7)
+                
+                    
+        Ua = mymodel(call_args, save_traj_at=dt_forcing).ys[0]
+                
+            
+        # PLOT
+        U = forcing1D.data.U.values
+        Uo, Vo = observations1D.get_obs()
+        
+        RMSE = tools.score_RMSE(Ua, U) 
+        dynamic_model, static_model = var_dfx.my_partition(mymodel)
+        final_cost = var_dfx.cost(dynamic_model, static_model, call_args)
+        print('RMSE is',RMSE)
+        # PLOT trajectory
+        fig, ax = plt.subplots(1,1,figsize = (10,3),constrained_layout=True,dpi=dpi)
+        ax.plot(forcing1D.time/86400, U, c='k', lw=2, label='Croco')
+        ax.plot(forcing1D.time/86400, Ua, c='g', label='slab')
+        ax.scatter(observations1D.time_obs/86400,Uo, c='r', label='obs')
+        ax.set_ylim([-0.3,0.4])
+        ax.set_title('RMSE='+str(jnp.round(RMSE,4))+' cost='+str(jnp.round(final_cost,4)))
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Ageo zonal current (m/s)')
+        ax.legend(loc=1)
+        fig.savefig(path_save_png+'JAX_test_classic_slab1D_eqx_difx_'+str(Nl)+'layers'+namesave_loc+'.png')
+            
         
         
         
