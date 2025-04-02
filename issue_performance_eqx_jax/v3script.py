@@ -9,16 +9,29 @@ import equinox as eqx
 import diffrax
 from diffrax import Euler, diffeqsolve, ODETerm
 jax.config.update("jax_enable_x64", True)
+jax.config.update('jax_platform_name', 'gpu')
+
+pk = jnp.array([-8.,-13.]) 
+TAx = jnp.array(0.2)      
+TAy = np.array(0.0)   
+fc = jnp.array(1e-4)     
+
 class classic_slab1D_eqx_only(eqx.Module):
-    pk : jnp.array = jnp.asarray([-8.,-13.]) 
-    TAx : jnp.array = jnp.array(0.2)      
-    TAy : jnp.array = jnp.array(0.0)   
-    fc : jnp.array = jnp.array(1e-4)      
+    pk : jnp.ndarray
+    TAx : jnp.ndarray   
+    TAy : jnp.ndarray  
+    fc : jnp.ndarray   
     dt_forcing : np.int32 =3600  
     t0 : np.int32  = 0      
     t1 : np.int32  = 28*86400       
     nt : np.int32  = 28*86400//60     
     dt : np.int32  = 60      
+    
+    def __init__(self, pk, TAx, TAy, fc):
+        self.pk = pk
+        self.TAx = TAx
+        self.TAy = TAy
+        self.fc = fc
     
     @eqx.filter_jit
     def __call__(self):
@@ -40,15 +53,21 @@ class classic_slab1D_eqx_only(eqx.Module):
         return jnp.real(U),jnp.imag(U)
     
 class classic_slab1D_difx_only(eqx.Module):
-    pk : jnp.array = jnp.array([-8.,-13.]) 
-    TAx : jnp.array = jnp.array(0.2)      
-    TAy : jnp.array = jnp.array(0.0)   
-    fc : jnp.array = jnp.array(1e-4)      
+    pk : jnp.ndarray
+    TAx : jnp.ndarray      
+    TAy : jnp.ndarray   
+    fc : jnp.ndarray      
     dt_forcing : np.int32 = 3600  
     t0 : np.int32  = 0      
     t1 : np.int32  = 28*86400       
     nt : np.int32  = 28*86400//60     
     dt : np.int32  = 60      
+            
+    def __init__(self, pk, TAx, TAy, fc):
+        self.pk = pk
+        self.TAx = TAx
+        self.TAy = TAy
+        self.fc = fc            
             
     @eqx.filter_jit
     def __call__(self):
@@ -77,22 +96,22 @@ class classic_slab1D_difx_only(eqx.Module):
             
         return sol[0],sol[1]
 
-def benchmark(func, N=10):
+def benchmark(func, N=100):
     L = np.zeros(N)
     _ = func() # run once for compilation
     for k in range(N):
         time1=clock.time()
         _ = func()
         L[k] = clock.time()-time1
-    return L.mean(), L.std()
+    return L.min(), L.mean(), L.std()
 
-eqxmodel_only = classic_slab1D_eqx_only()
-eqx_dfx_model_only = classic_slab1D_difx_only()
+eqxmodel_only = classic_slab1D_eqx_only(pk, TAx, TAy, fc)
+eqx_dfx_model_only = classic_slab1D_difx_only(pk, TAx, TAy, fc)
 
 # new models with new control parameter pk
 print('Forward model:')
-print('     eqx_only:       mean, std (s)', benchmark(eqxmodel_only)) 
-print('     eqx_dfx:        mean, std (s)', benchmark(eqx_dfx_model_only))
+print('     eqx_only:      min , mean, std (s)', benchmark(eqxmodel_only)) 
+print('     eqx_dfx:       min, mean, std (s)', benchmark(eqx_dfx_model_only))
 
 
 
